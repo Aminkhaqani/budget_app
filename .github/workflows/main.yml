@@ -18,26 +18,46 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Debug repo tree (helps if it fails)
+        run: |
+          pwd
+          ls -la
+          echo "---- top level folders ----"
+          find . -maxdepth 2 -type f -name package.json -print
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install
+      - name: Install + Build (auto-detect app folder)
         run: |
-          cd budget-app
-          npm ci
+          set -e
+          if [ -f "./budget-app/package.json" ]; then
+            APP_DIR="budget-app"
+          elif [ -f "./package.json" ]; then
+            APP_DIR="."
+          else
+            echo "ERROR: Could not find package.json in ./ or ./budget-app"
+            echo "Found package.json files:"
+            find . -maxdepth 4 -name package.json -print
+            exit 1
+          fi
 
-      - name: Build
-        run: |
-          cd budget-app
+          echo "Using APP_DIR=$APP_DIR"
+          cd "$APP_DIR"
+          npm ci
           npm run build
 
-      - name: Upload artifact
+      - name: Upload artifact (auto-detect dist)
         uses: actions/upload-pages-artifact@v3
         with:
-          path: budget-app/dist
+          path: |
+            budget-app/dist
+            dist
 
   deploy:
     needs: build
@@ -45,4 +65,5 @@ jobs:
     environment:
       name: github-pages
     steps:
-      - uses: actions/deploy-pages@v4
+      - name: Deploy
+        uses: actions/deploy-pages@v4
