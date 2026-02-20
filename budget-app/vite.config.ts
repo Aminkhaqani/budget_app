@@ -3,6 +3,6 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  base: "/budget_app/", // IMPORTANT: repo name is budget_app (underscore)
+  base: "/budget_app/",
   plugins: [react(), tailwindcss()],
 });
