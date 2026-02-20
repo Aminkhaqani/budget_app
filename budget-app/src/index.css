@@ -1,0 +1,36 @@
+@import "@fontsource/vazirmatn/latin.css";
+@import "@fontsource/vazirmatn/arabic.css";
+@import "tailwindcss";
+
+/* ✅ theme tokens (Tailwind v4 - CSS variables) */
+:root{
+  --navy-900:#0B1B3A;
+  --navy-700:#102A5A;
+  --orange:#FF7A1A;
+  --bg:#F5F7FB;
+  --ink:#0F172A;
+  --muted:#64748B;
+  --transfer:#334155;
+  --orange-soft: #FFF1E6;
+}
+@layer base {
+  html { direction: rtl; }
+
+  body {
+    margin: 0;
+    background: #f5f7fb; /* بک‌گراند خیلی روشن */
+    color: #0f172a;
+    font-family: "Vazirmatn", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial;
+  }
+}
+@layer utilities {
+  .bg-navy-900 { background-color: var(--navy-900); }
+  .bg-navy-700 { background-color: var(--navy-700); }
+  .bg-orange   { background-color: var(--orange); }
+  .bg-orange-soft { background-color: var(--orange-soft); }
+  .text-orange { color: var(--orange); }
+  .text-ink    { color: var(--ink); }
+  .text-muted  { color: var(--muted); }
+  .text-transfer { color: var(--transfer); }
+  .bg-app      { background-color: var(--bg); }
+}
