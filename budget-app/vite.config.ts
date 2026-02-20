@@ -1,5 +1,8 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+
 export default defineConfig({
-  // GitHub Pages URL = https://<user>.github.io/budget-app/
-  base: "/budget-app/",
+  base: "/budget_app/", // IMPORTANT: repo name is budget_app (underscore)
   plugins: [react(), tailwindcss()],
 });

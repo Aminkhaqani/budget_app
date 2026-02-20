@@ -1,4 +1,3 @@
-import { shortJalali } from "../lib/date";
 export default function ReportsPage() {
   return (
     <div className="pt-4 sm:pt-6">
