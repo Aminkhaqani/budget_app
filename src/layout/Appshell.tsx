@@ -1,6 +1,16 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { shortJalali } from "../lib/date";
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import {
+  addDays,
+  fullJalali,
+  jalaliMonthBounds,
+  jalaliMonthTitle,
+  jalaliParts,
+  shiftJalaliMonth,
+  shortJalali,
+  todayISO,
+} from "../lib/date";
 
 type TxType = "income" | "expense" | "transfer";
 
@@ -88,23 +98,6 @@ function NavItem({
   );
 }
 
-function todayISO() {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function addDays(iso: string, delta: number) {
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + delta);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
 function formatDayLabel(iso: string) {
   const t = todayISO();
   if (iso === t) return "امروز";
@@ -175,8 +168,7 @@ export default function Appshell() {
     { id: "t4", type: "transfer", amountToman: 250000, date: "2026-02-16", fromAccountId: "a_cash", toAccountId: "a_iman" },
   ]);
 
-  const categories: Category[] = useMemo(
-    () => [
+  const [categories, setCategories] = useState<Category[]>([
       { id: "c_exp_food", type: "expense", title: "خوراک", icon: "🍴", popular: true },
       { id: "c_exp_transport", type: "expense", title: "حمل‌ونقل", icon: "🚗", popular: true },
       { id: "c_exp_bills", type: "expense", title: "قبوض", icon: "🧾", popular: true },
@@ -186,19 +178,14 @@ export default function Appshell() {
       { id: "c_inc_salary", type: "income", title: "حقوق", icon: "🎁", popular: true },
       { id: "c_inc_freelance", type: "income", title: "فریلنس", icon: "💻", popular: true },
       { id: "c_inc_sale", type: "income", title: "فروش", icon: "🏷️", popular: true },
-    ],
-    []
-  );
+  ]);
 
-  const accounts: Account[] = useMemo(
-    () => [
+  const [accounts, setAccounts] = useState<Account[]>([
       { id: "a_cash", title: "موجودی نقدی" },
       { id: "a_gold", title: "صندوق طلا" },
       { id: "a_iman", title: "حساب ایمان" },
       { id: "a_saving", title: "پس‌انداز" },
-    ],
-    []
-  );
+  ]);
 
   const openAdd = () => {
     setEditingId(null);
@@ -228,12 +215,55 @@ export default function Appshell() {
     setTxs((prev) => [{ ...payload, id: crypto.randomUUID() }, ...prev]);
   };
 
+  const saveCategory = (category: Category) => {
+    setCategories((prev) => {
+      const exists = prev.some((c) => c.id === category.id);
+      return exists ? prev.map((c) => (c.id === category.id ? category : c)) : [...prev, category];
+    });
+  };
+
+  const deleteCategory = (id: string) => {
+    setCategories((prev) => prev.filter((c) => c.id !== id));
+    setTxs((prev) => prev.map((t) => (t.categoryId === id ? { ...t, categoryId: undefined } : t)));
+  };
+
+  const saveAccount = (account: Account) => {
+    setAccounts((prev) => {
+      const exists = prev.some((a) => a.id === account.id);
+      return exists ? prev.map((a) => (a.id === account.id ? account : a)) : [...prev, account];
+    });
+  };
+
+  const deleteAccount = (id: string) => {
+    setAccounts((prev) => prev.filter((a) => a.id !== id));
+    setTxs((prev) =>
+      prev.map((t) => ({
+        ...t,
+        fromAccountId: t.fromAccountId === id ? undefined : t.fromAccountId,
+        toAccountId: t.toAccountId === id ? undefined : t.toAccountId,
+      }))
+    );
+  };
+
   return (
     <div className="min-h-screen bg-bg text-ink">
       <div className="p-3">
 </div>
       <div className="mx-auto min-h-screen max-w-[420px] px-3 sm:px-4 pb-28">
-        <Outlet context={{ txs, categories, accounts, openAdd, openEdit, deleteTx }} />
+        <Outlet
+          context={{
+            txs,
+            categories,
+            accounts,
+            openAdd,
+            openEdit,
+            deleteTx,
+            saveCategory,
+            deleteCategory,
+            saveAccount,
+            deleteAccount,
+          }}
+        />
       </div>
 
       {/* Bottom bar + center FAB */}
@@ -308,6 +338,7 @@ function AddTransactionModal({
   const [type, setType] = useState<TxType>(initialTx?.type ?? "expense");
   const [amountRaw, setAmountRaw] = useState<string>(initialTx ? String(initialTx.amountToman) : "");
   const [date, setDate] = useState<string>(initialTx?.date ?? todayISO());
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [note, setNote] = useState<string>(initialTx?.note ?? "");
 
   const [categoryId, setCategoryId] = useState<string>(initialTx?.categoryId ?? "");
@@ -440,7 +471,7 @@ function AddTransactionModal({
                 </button>
 
                 <button
-                  onClick={() => alert("بعداً: تقویم")}
+                  onClick={() => setCalendarOpen(true)}
                   className="mr-2 h-9 w-9 rounded-xl bg-bg hover:bg-slate-200"
                   aria-label="تقویم"
                   title="تقویم"
@@ -448,6 +479,17 @@ function AddTransactionModal({
                   📅
                 </button>
               </div>
+
+              {calendarOpen && (
+                <PersianCalendar
+                  value={date}
+                  onSelect={(nextDate) => {
+                    setDate(nextDate);
+                    setCalendarOpen(false);
+                  }}
+                  onClose={() => setCalendarOpen(false)}
+                />
+              )}
 
               <input
                 value={note}
@@ -540,7 +582,7 @@ function SegBtn({
 }: {
   active?: boolean;
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button
@@ -635,6 +677,117 @@ function Dropdown({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function PersianCalendar({
+  value,
+  onSelect,
+  onClose,
+}: {
+  value: string;
+  onSelect: (iso: string) => void;
+  onClose: () => void;
+}) {
+  const selected = jalaliParts(value);
+  const [view, setView] = useState({ year: selected.year, month: selected.month });
+  const monthBounds = jalaliMonthBounds(view.year, view.month);
+  const firstWeekday = new Date(monthBounds.start + "T00:00:00").getDay();
+  const leading = firstWeekday === 6 ? 0 : firstWeekday + 1;
+  const days: string[] = [];
+
+  for (let iso = monthBounds.start; iso <= monthBounds.end; iso = addDays(iso, 1)) {
+    days.push(iso);
+  }
+
+  const goMonth = (delta: number) => {
+    setView((current) => shiftJalaliMonth(current.year, current.month, delta));
+  };
+
+  return (
+    <div className="rounded-3xl bg-bg p-3 ring-1 ring-black/5">
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => goMonth(-1)}
+          className="h-9 w-9 rounded-xl bg-white text-navy-900 ring-1 ring-black/5 hover:bg-slate-100"
+          aria-label="ماه قبل"
+          title="ماه قبل"
+        >
+          ›
+        </button>
+
+        <div className="text-center">
+          <div className="text-sm font-extrabold text-ink">{jalaliMonthTitle(view.year, view.month)}</div>
+          <div className="text-[11px] text-muted">{fullJalali(value)}</div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => goMonth(1)}
+          className="h-9 w-9 rounded-xl bg-white text-navy-900 ring-1 ring-black/5 hover:bg-slate-100"
+          aria-label="ماه بعد"
+          title="ماه بعد"
+        >
+          ‹
+        </button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-bold text-muted">
+        {["ش", "ی", "د", "س", "چ", "پ", "ج"].map((day) => (
+          <div key={day} className="py-1">
+            {day}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center text-xs">
+        {Array.from({ length: leading }).map((_, index) => (
+          <div key={`empty-${index}`} className="h-9" />
+        ))}
+
+        {days.map((iso) => {
+          const day = jalaliParts(iso).day;
+          const isSelected = iso === value;
+          const isToday = iso === todayISO();
+
+          return (
+            <button
+              key={iso}
+              type="button"
+              onClick={() => onSelect(iso)}
+              className={`h-9 rounded-xl font-extrabold ${
+                isSelected
+                  ? "bg-navy-900 text-white"
+                  : isToday
+                  ? "bg-orange-soft text-orange"
+                  : "bg-white text-ink hover:bg-slate-100"
+              }`}
+              title={fullJalali(iso)}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => onSelect(todayISO())}
+          className="rounded-2xl bg-white px-3 py-2 text-xs font-extrabold text-ink ring-1 ring-black/5 hover:bg-slate-100"
+        >
+          امروز
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-2xl bg-white px-3 py-2 text-xs font-extrabold text-muted ring-1 ring-black/5 hover:bg-slate-100"
+        >
+          بستن
+        </button>
+      </div>
     </div>
   );
 }

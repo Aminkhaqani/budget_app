@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { useOutletContext } from "react-router-dom";
 import { shortJalali } from "../lib/date";
 import type { Tx, Account, Category } from "../layout/Appshell";
@@ -62,7 +63,7 @@ export default function TransactionsPage() {
   );
 }
 
-function Chip({ active, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }) {
+function Chip({ active, onClick, children }: { active?: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
       onClick={onClick}
