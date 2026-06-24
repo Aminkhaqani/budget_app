@@ -4,16 +4,16 @@ import { useOutletContext } from "react-router-dom";
 import type { Account, Category, Tx } from "../layout/Appshell";
 import {
   addDays,
+  currentJalaliMonthBounds,
+  currentJalaliYearBounds,
   fullJalali,
   isBetweenISO,
   jalaliISODate,
-  jalaliMonthBounds,
   jalaliMonthKey,
   jalaliMonthShortLabel,
-  jalaliParts,
-  jalaliYearBounds,
   lastNDaysBounds,
   parseJalaliISODate,
+  todayISO,
 } from "../lib/date";
 
 type Ctx = {
@@ -30,12 +30,7 @@ const chartColors = ["#FF7A1A", "#0B1B3A", "#10B981", "#6366F1", "#F59E0B", "#33
 
 export default function ReportsPage() {
   const { txs, categories, accounts, openEdit } = useOutletContext<Ctx>();
-  const anchorDate = useMemo(
-    () => txs.reduce((max, tx) => (tx.date > max ? tx.date : max), txs[0]?.date ?? new Date().toISOString().slice(0, 10)),
-    [txs]
-  );
-  const anchorParts = jalaliParts(anchorDate);
-  const monthBounds = jalaliMonthBounds(anchorParts.year, anchorParts.month);
+  const monthBounds = currentJalaliMonthBounds();
   const [preset, setPreset] = useState<RangePreset>("month");
   const [from, setFrom] = useState(monthBounds.start);
   const [to, setTo] = useState(monthBounds.end);
@@ -48,18 +43,17 @@ export default function ReportsPage() {
   const applyPreset = (next: RangePreset) => {
     setPreset(next);
     if (next === "month") {
-      const p = jalaliParts(anchorDate);
-      const bounds = jalaliMonthBounds(p.year, p.month);
+      const bounds = currentJalaliMonthBounds();
       setFrom(bounds.start);
       setTo(bounds.end);
     }
     if (next === "year") {
-      const bounds = jalaliYearBounds(anchorDate);
+      const bounds = currentJalaliYearBounds();
       setFrom(bounds.start);
       setTo(bounds.end);
     }
     if (next === "last30") {
-      const bounds = lastNDaysBounds(30, anchorDate);
+      const bounds = lastNDaysBounds(30, todayISO());
       setFrom(bounds.start);
       setTo(bounds.end);
     }
