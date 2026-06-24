@@ -11,6 +11,7 @@ import {
   shortJalali,
   todayISO,
 } from "../lib/date";
+import { initialAccounts, initialCategories, initialTransactions } from "../data/initialData";
 
 type TxType = "income" | "expense" | "transfer";
 
@@ -161,31 +162,11 @@ export default function Appshell() {
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [txs, setTxs] = useState<Tx[]>([
-    { id: "t1", type: "expense", amountToman: 45000, date: "2026-02-19", categoryId: "c_exp_food" },
-    { id: "t2", type: "expense", amountToman: 120000, date: "2026-02-18", categoryId: "c_exp_shop" },
-    { id: "t3", type: "income", amountToman: 1890000, date: "2026-02-17", categoryId: "c_inc_salary" },
-    { id: "t4", type: "transfer", amountToman: 250000, date: "2026-02-16", fromAccountId: "a_cash", toAccountId: "a_iman" },
-  ]);
-
-  const [categories, setCategories] = useState<Category[]>([
-      { id: "c_exp_food", type: "expense", title: "خوراک", icon: "🍴", popular: true },
-      { id: "c_exp_transport", type: "expense", title: "حمل‌ونقل", icon: "🚗", popular: true },
-      { id: "c_exp_bills", type: "expense", title: "قبوض", icon: "🧾", popular: true },
-      { id: "c_exp_shop", type: "expense", title: "خرید", icon: "🛍️" },
-      { id: "c_exp_debt", type: "expense", title: "قرض", icon: "📄" },
-
-      { id: "c_inc_salary", type: "income", title: "حقوق", icon: "🎁", popular: true },
-      { id: "c_inc_freelance", type: "income", title: "فریلنس", icon: "💻", popular: true },
-      { id: "c_inc_sale", type: "income", title: "فروش", icon: "🏷️", popular: true },
-  ]);
-
-  const [accounts, setAccounts] = useState<Account[]>([
-      { id: "a_cash", title: "موجودی نقدی" },
-      { id: "a_gold", title: "صندوق طلا" },
-      { id: "a_iman", title: "حساب ایمان" },
-      { id: "a_saving", title: "پس‌انداز" },
-  ]);
+  const [txs, setTxs] = useState<Tx[]>(() =>
+    [...initialTransactions].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+  );
+  const [categories, setCategories] = useState<Category[]>(initialCategories);
+  const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
 
   const openAdd = () => {
     setEditingId(null);
