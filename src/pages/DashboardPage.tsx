@@ -9,9 +9,7 @@ type Ctx = {
   txs: Tx[];
   categories: Category[];
   accounts: Account[];
-  openAdd: () => void;
   openEdit: (id: string) => void;
-  deleteTx: (id: string) => void;
 };
 
 const money = (n: number) => new Intl.NumberFormat("fa-IR").format(Math.abs(Math.round(n)));
@@ -19,17 +17,19 @@ const money = (n: number) => new Intl.NumberFormat("fa-IR").format(Math.abs(Math
 function nextPeriod(p: Period): Period {
   return p === "month" ? "quarter" : p === "quarter" ? "year" : "month";
 }
+
 function periodLabel(p: Period) {
   if (p === "month") return "ماه";
   if (p === "quarter") return "فصل";
   return "سال";
 }
+
 function arrow(deltaPct: number) {
   return deltaPct >= 0 ? "↗" : "↘";
 }
 
 export default function DashboardPage() {
-  const { txs, categories, accounts, openEdit, deleteTx } = useOutletContext<Ctx>();
+  const { txs, categories, accounts, openEdit } = useOutletContext<Ctx>();
   const [period, setPeriod] = useState<Period>("month");
 
   const byCatTitle = useMemo(() => {
@@ -50,7 +50,6 @@ export default function DashboardPage() {
     return { income: inc, expense: exp };
   }, [txs]);
 
-  // placeholder previous-period values
   const { incomePrev, expensePrev } = useMemo(() => {
     const f = period === "month" ? 0.92 : period === "quarter" ? 1.08 : 0.97;
     return {
@@ -66,15 +65,15 @@ export default function DashboardPage() {
     if (t.type === "transfer") {
       const f = t.fromAccountId ? byAccTitle.get(t.fromAccountId) : "";
       const to = t.toAccountId ? byAccTitle.get(t.toAccountId) : "";
-      return `جابجایی${f && to ? `: ${f} → ${to}` : ""}`;
+      return `جابجایی${f && to ? `: ${f} ← ${to}` : ""}`;
     }
     if (!t.categoryId) return t.type === "income" ? "درآمد" : "هزینه";
     return byCatTitle.get(t.categoryId) ?? "بدون دسته‌بندی";
   };
 
   return (
-<div className="pt-4 sm:pt-6 bg-bg min-h-screen">
-    <div className="-mx-3 sm:-mx-4 -mt-4 sm:-mt-6 px-3 sm:px-4 pt-4 sm:pt-6 pb-6 bg-navy-900 rounded-b-[32px]">
+    <div className="pt-4 sm:pt-6 bg-bg min-h-screen">
+      <div className="-mx-3 sm:-mx-4 -mt-4 sm:-mt-6 px-3 sm:px-4 pt-4 sm:pt-6 pb-6 bg-navy-900 rounded-b-[32px]">
         <div className="flex items-center justify-between">
           <div className="text-sm font-extrabold text-white">Budget</div>
 
@@ -89,28 +88,12 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* KPI cards */}
         <div className="mt-4 grid grid-cols-2 gap-3">
-          <KpiCard
-            variant="income"
-            title="درآمد"
-            value={income}
-            prevValue={incomePrev}
-            deltaPct={incomeDeltaPct}
-            upGood
-          />
-          <KpiCard
-            variant="expense"
-            title="هزینه"
-            value={expense}
-            prevValue={expensePrev}
-            deltaPct={expenseDeltaPct}
-            upGood={false}
-          />
+          <KpiCard variant="income" title="درآمد" value={income} prevValue={incomePrev} deltaPct={incomeDeltaPct} upGood />
+          <KpiCard variant="expense" title="هزینه" value={expense} prevValue={expensePrev} deltaPct={expenseDeltaPct} upGood={false} />
         </div>
       </div>
 
-      {/* Recent */}
       <div className="mt-5 flex items-center justify-between px-1">
         <h2 className="text-base font-extrabold text-ink">آخرین تراکنش‌ها</h2>
       </div>
@@ -119,18 +102,8 @@ export default function DashboardPage() {
         {txs.slice(0, 8).map((t) => {
           const isIncome = t.type === "income";
           const isExpense = t.type === "expense";
-
-          const rowBg = isIncome
-            ? "bg-emerald-50/60"
-            : isExpense
-            ? "bg-orange-50/70"
-            : "bg-white";
-
-          const amountTone = isIncome
-            ? "text-emerald-700"
-            : isExpense
-            ? "text-orangeExpense"
-            : "text-transfer";
+          const rowBg = isIncome ? "bg-emerald-50/60" : isExpense ? "bg-orange-50/70" : "bg-white";
+          const amountTone = isIncome ? "text-emerald-700" : isExpense ? "text-orangeExpense" : "text-transfer";
 
           return (
             <div
@@ -143,29 +116,13 @@ export default function DashboardPage() {
               title="برای ویرایش کلیک کن"
             >
               <div className="min-w-0">
-                <div className="font-extrabold text-ink truncate">
-                  {rowLabel(t)}
-                </div>
+                <div className="font-extrabold text-ink truncate">{rowLabel(t)}</div>
                 <div className="text-xs text-muted mt-0.5">{shortJalali(t.date)}</div>
+                {t.note && <div className="mt-0.5 truncate text-[10px] text-muted">{t.note}</div>}
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <div className={`font-extrabold ${amountTone}`}>
-                  {money(t.amountToman)} <span className="text-[11px] font-bold text-muted">تومن</span>
-                </div>
-
-                {/* Trash */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteTx(t.id);
-                  }}
-                  className="h-9 w-9 grid place-items-center rounded-xl bg-white/70 ring-1 ring-black/5 hover:bg-white"
-                  title="حذف"
-                  aria-label="حذف"
-                >
-                  <TrashIcon />
-                </button>
+              <div className={`shrink-0 font-extrabold ${amountTone}`}>
+                {money(t.amountToman)} <span className="text-[11px] font-bold text-muted">تومن</span>
               </div>
             </div>
           );
@@ -192,17 +149,14 @@ function KpiCard({
 }) {
   const isUp = deltaPct >= 0;
   const good = upGood ? isUp : !isUp;
-
   const deltaColor = good ? "text-emerald-700" : "text-red-600";
   const deltaBg = good ? "bg-emerald-50" : "bg-red-50";
   const pct = Math.abs(deltaPct) * 100;
-
-  const cardBg = variant === "income" ? "bg-white" : "bg-white";
   const headerTint = variant === "income" ? "bg-navy-900/10" : "bg-orange-50";
   const valueTone = variant === "income" ? "text-navy-900" : "text-orangeExpense";
 
   return (
-    <div className={`rounded-2xl ${cardBg} shadow-sm ring-1 ring-black/5 overflow-hidden`}>
+    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
       <div className={`px-4 py-3 ${headerTint}`}>
         <div className="text-xs text-muted">{title}</div>
         <div className={`mt-1 text-xl font-extrabold ${valueTone}`}>{money(value)}</div>
@@ -219,16 +173,5 @@ function KpiCard({
         </div>
       </div>
     </div>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" className="text-slate-700">
-      <path
-        fill="currentColor"
-        d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v10h-2V9Zm4 0h2v10h-2V9ZM7 9h2v10H7V9Zm-1 14h12a2 2 0 0 0 2-2V7H4v14a2 2 0 0 0 2 2Z"
-      />
-    </svg>
   );
 }

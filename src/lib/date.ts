@@ -55,6 +55,19 @@ export function fullJalali(iso: string) {
   }).format(d);
 }
 
+export function jalaliISODate(iso: string) {
+  const p = jalaliParts(iso);
+  return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
+}
+
+export function parseJalaliISODate(value: string) {
+  const normalized = value.trim().replaceAll("/", "-");
+  const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return findGregorianForJalali(Number(year), Number(month), Number(day));
+}
+
 export function jalaliParts(iso: string): JalaliParts {
   const parts = jalaliFormatter.formatToParts(new Date(iso + "T00:00:00"));
   return {
@@ -106,9 +119,10 @@ export function jalaliMonthBounds(year: number, month: number) {
 
 export function shiftJalaliMonth(year: number, month: number, delta: number) {
   const zeroBased = year * 12 + (month - 1) + delta;
+  const normalizedMonth = ((zeroBased % 12) + 12) % 12;
   return {
     year: Math.floor(zeroBased / 12),
-    month: (zeroBased % 12) + 1,
+    month: normalizedMonth + 1,
   };
 }
 
@@ -117,18 +131,22 @@ export function currentJalaliMonthBounds() {
   return jalaliMonthBounds(year, month);
 }
 
-export function currentJalaliYearBounds() {
-  const { year } = jalaliParts(todayISO());
+export function jalaliYearBounds(anchorISO = todayISO()) {
+  const { year } = jalaliParts(anchorISO);
   return {
     start: findGregorianForJalali(year, 1, 1),
-    end: todayISO(),
+    end: anchorISO,
   };
 }
 
-export function lastNDaysBounds(days: number) {
+export function currentJalaliYearBounds() {
+  return jalaliYearBounds(todayISO());
+}
+
+export function lastNDaysBounds(days: number, anchorISO = todayISO()) {
   return {
-    start: addDays(todayISO(), -(days - 1)),
-    end: todayISO(),
+    start: addDays(anchorISO, -(days - 1)),
+    end: anchorISO,
   };
 }
 

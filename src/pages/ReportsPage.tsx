@@ -1,34 +1,41 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useOutletContext } from "react-router-dom";
 import type { Account, Category, Tx } from "../layout/Appshell";
 import {
   addDays,
-  currentJalaliMonthBounds,
-  currentJalaliYearBounds,
   fullJalali,
   isBetweenISO,
+  jalaliISODate,
+  jalaliMonthBounds,
   jalaliMonthKey,
   jalaliMonthShortLabel,
+  jalaliParts,
+  jalaliYearBounds,
   lastNDaysBounds,
-  shortJalali,
+  parseJalaliISODate,
 } from "../lib/date";
 
 type Ctx = {
   txs: Tx[];
   categories: Category[];
   accounts: Account[];
+  openEdit: (id: string) => void;
 };
 
 type RangePreset = "month" | "year" | "last30" | "custom";
 
 const money = (n: number) => new Intl.NumberFormat("fa-IR").format(Math.abs(Math.round(n)));
-
 const chartColors = ["#FF7A1A", "#0B1B3A", "#10B981", "#6366F1", "#F59E0B", "#334155", "#EF4444"];
 
 export default function ReportsPage() {
-  const { txs, categories, accounts } = useOutletContext<Ctx>();
-  const monthBounds = currentJalaliMonthBounds();
+  const { txs, categories, accounts, openEdit } = useOutletContext<Ctx>();
+  const anchorDate = useMemo(
+    () => txs.reduce((max, tx) => (tx.date > max ? tx.date : max), txs[0]?.date ?? new Date().toISOString().slice(0, 10)),
+    [txs]
+  );
+  const anchorParts = jalaliParts(anchorDate);
+  const monthBounds = jalaliMonthBounds(anchorParts.year, anchorParts.month);
   const [preset, setPreset] = useState<RangePreset>("month");
   const [from, setFrom] = useState(monthBounds.start);
   const [to, setTo] = useState(monthBounds.end);
@@ -41,24 +48,25 @@ export default function ReportsPage() {
   const applyPreset = (next: RangePreset) => {
     setPreset(next);
     if (next === "month") {
-      const bounds = currentJalaliMonthBounds();
+      const p = jalaliParts(anchorDate);
+      const bounds = jalaliMonthBounds(p.year, p.month);
       setFrom(bounds.start);
       setTo(bounds.end);
     }
     if (next === "year") {
-      const bounds = currentJalaliYearBounds();
+      const bounds = jalaliYearBounds(anchorDate);
       setFrom(bounds.start);
       setTo(bounds.end);
     }
     if (next === "last30") {
-      const bounds = lastNDaysBounds(30);
+      const bounds = lastNDaysBounds(30, anchorDate);
       setFrom(bounds.start);
       setTo(bounds.end);
     }
   };
 
   const filteredTxs = useMemo(
-    () => txs.filter((tx) => isBetweenISO(tx.date, from, to)).sort((a, b) => b.date.localeCompare(a.date)),
+    () => txs.filter((tx) => isBetweenISO(tx.date, from, to)).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)),
     [txs, from, to]
   );
 
@@ -108,7 +116,8 @@ export default function ReportsPage() {
 
   const exportExcel = () => {
     const rows = filteredTxs.map((tx) => ({
-      تاریخ: shortJalali(tx.date),
+      تاریخ: jalaliISODate(tx.date),
+      "تاریخ کامل": fullJalali(tx.date),
       "تاریخ میلادی": tx.date,
       نوع: tx.type === "income" ? "درآمد" : tx.type === "expense" ? "هزینه" : "جابجایی",
       مبلغ: tx.amountToman,
@@ -117,6 +126,7 @@ export default function ReportsPage() {
       "به حساب": tx.type === "transfer" ? accountTitle(tx.toAccountId) : "",
       شرح: tx.note ?? "",
     }));
+    const emptyRow = { تاریخ: "", "تاریخ کامل": "", "تاریخ میلادی": "", نوع: "", مبلغ: "", دسته: "", "از حساب": "", "به حساب": "", شرح: "" };
     const htmlRows = rows
       .map(
         (row) =>
@@ -125,16 +135,7 @@ export default function ReportsPage() {
             .join("")}</tr>`
       )
       .join("");
-    const headers = Object.keys(rows[0] ?? {
-      تاریخ: "",
-      "تاریخ میلادی": "",
-      نوع: "",
-      مبلغ: "",
-      دسته: "",
-      "از حساب": "",
-      "به حساب": "",
-      شرح: "",
-    })
+    const headers = Object.keys(rows[0] ?? emptyRow)
       .map((key) => `<th>${key}</th>`)
       .join("");
     const workbook = `<html dir="rtl"><head><meta charset="UTF-8" /></head><body><table><thead><tr>${headers}</tr></thead><tbody>${htmlRows}</tbody></table></body></html>`;
@@ -142,7 +143,7 @@ export default function ReportsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `budget-report-${from}-to-${to}.xls`;
+    a.download = `budget-report-${jalaliISODate(from)}-to-${jalaliISODate(to)}.xls`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -189,17 +190,24 @@ export default function ReportsPage() {
             <div className="text-xs text-muted">تراکنشی برای این بازه ثبت نشده است.</div>
           ) : (
             filteredTxs.map((tx) => (
-              <div key={tx.id} className="flex items-center justify-between gap-3 rounded-2xl bg-bg px-3 py-2">
+              <button
+                key={tx.id}
+                type="button"
+                onClick={() => openEdit(tx.id)}
+                className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 text-right ring-1 ring-black/5 hover:brightness-[0.98] active:brightness-[0.97] ${
+                  tx.type === "income" ? "bg-emerald-50/70" : tx.type === "expense" ? "bg-orange-50/70" : "bg-bg"
+                }`}
+              >
                 <div className="min-w-0">
                   <div className="truncate text-sm font-extrabold text-ink">
-                    {tx.type === "transfer"
-                      ? `${accountTitle(tx.fromAccountId)} ← ${accountTitle(tx.toAccountId)}`
-                      : categoryTitle(tx.categoryId)}
+                    {tx.type === "transfer" ? `${accountTitle(tx.fromAccountId)} ← ${accountTitle(tx.toAccountId)}` : categoryTitle(tx.categoryId)}
                   </div>
-                  <div className="text-[11px] text-muted">{fullJalali(tx.date)}</div>
+                  <div className="truncate text-[11px] text-muted">{jalaliISODate(tx.date)} · {tx.note || fullJalali(tx.date)}</div>
                 </div>
-                <div className="shrink-0 text-sm font-extrabold text-ink">{money(tx.amountToman)}</div>
-              </div>
+                <div className={`shrink-0 text-sm font-extrabold ${tx.type === "income" ? "text-emerald-700" : tx.type === "expense" ? "text-orangeExpense" : "text-transfer"}`}>
+                  {money(tx.amountToman)}
+                </div>
+              </button>
             ))
           )}
         </div>
@@ -228,13 +236,31 @@ function Chip({ active, onClick, children }: { active?: boolean; onClick: () => 
 }
 
 function DateInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [draft, setDraft] = useState(jalaliISODate(value));
+
+  useEffect(() => {
+    setDraft(jalaliISODate(value));
+  }, [value]);
+
+  const commit = (nextDraft: string) => {
+    const parsed = parseJalaliISODate(nextDraft);
+    if (parsed) onChange(parsed);
+    setDraft(parsed ? jalaliISODate(parsed) : jalaliISODate(value));
+  };
+
   return (
     <label className="block rounded-2xl bg-bg px-3 py-2">
       <span className="text-[11px] text-muted">{label}</span>
       <input
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        type="text"
+        inputMode="numeric"
+        dir="ltr"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => commit(draft)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit(draft);
+        }}
         className="mt-1 w-full bg-transparent text-xs font-extrabold text-ink outline-none"
       />
     </label>
@@ -266,14 +292,7 @@ function PieChart({
   const circumference = 2 * Math.PI * radius;
   const segments = slices.reduce<{ label: string; value: number; dash: number; offset: number }[]>((acc, slice) => {
     const previousOffset = acc.reduce((sum, segment) => sum + segment.dash, 0);
-    return [
-      ...acc,
-      {
-        ...slice,
-        dash: total > 0 ? (slice.value / total) * circumference : 0,
-        offset: previousOffset,
-      },
-    ];
+    return [...acc, { ...slice, dash: total > 0 ? (slice.value / total) * circumference : 0, offset: previousOffset }];
   }, []);
 
   return (

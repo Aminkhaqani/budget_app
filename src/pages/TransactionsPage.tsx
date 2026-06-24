@@ -4,22 +4,26 @@ import { useOutletContext } from "react-router-dom";
 import { shortJalali } from "../lib/date";
 import type { Tx, Account, Category } from "../layout/Appshell";
 
-type Ctx = { txs: Tx[]; accounts: Account[]; categories: Category[] };
+type Ctx = {
+  txs: Tx[];
+  accounts: Account[];
+  categories: Category[];
+  openEdit: (id: string) => void;
+};
 
 const money = (n: number) => new Intl.NumberFormat("fa-IR").format(Math.abs(Math.round(n)));
-
 type Filter = "all" | "income" | "expense" | "transfer";
 
 export default function TransactionsPage() {
-  const { txs, accounts, categories } = useOutletContext<Ctx>();
+  const { txs, accounts, categories, openEdit } = useOutletContext<Ctx>();
   const [filter, setFilter] = useState<Filter>("all");
 
   const list = useMemo(() => {
-    return filter === "all" ? txs : txs.filter(t => t.type === filter);
+    return filter === "all" ? txs : txs.filter((t) => t.type === filter);
   }, [txs, filter]);
 
-  const accountTitle = (id?: string) => accounts.find(a => a.id === id)?.title || "—";
-  const categoryTitle = (id?: string) => categories.find(c => c.id === id)?.title || "—";
+  const accountTitle = (id?: string) => accounts.find((a) => a.id === id)?.title || "—";
+  const categoryTitle = (id?: string) => categories.find((c) => c.id === id)?.title || "—";
 
   return (
     <div className="pt-4 sm:pt-6">
@@ -36,26 +40,25 @@ export default function TransactionsPage() {
 
       <div className="mt-4 space-y-2">
         {list.map((t) => {
-          const color =
-            t.type === "income" ? "text-ink" : t.type === "expense" ? "text-orangeExpense" : "text-slate-700";
-
-          const title =
-            t.type === "transfer"
-              ? `${accountTitle(t.fromAccountId)} → ${accountTitle(t.toAccountId)}`
-              : categoryTitle(t.categoryId);
+          const color = t.type === "income" ? "text-emerald-700" : t.type === "expense" ? "text-orangeExpense" : "text-slate-700";
+          const rowBg = t.type === "income" ? "bg-emerald-50/60" : t.type === "expense" ? "bg-orange-50/70" : "bg-white";
+          const title = t.type === "transfer" ? `${accountTitle(t.fromAccountId)} ← ${accountTitle(t.toAccountId)}` : categoryTitle(t.categoryId);
 
           return (
-            <div
+            <button
               key={t.id}
-              className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3.5 py-3 shadow-sm ring-1 ring-black/5"
+              type="button"
+              onClick={() => openEdit(t.id)}
+              className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-right shadow-sm ring-1 ring-black/5 hover:brightness-[0.98] active:brightness-[0.97] ${rowBg}`}
             >
               <div className="min-w-0">
                 <div className="font-bold text-ink truncate">{title}</div>
-                <div className="text-xs text-ink mt-0.5">{shortJalali(t.date)}</div>
+                <div className="text-xs text-muted mt-0.5">{shortJalali(t.date)}</div>
+                {t.note && <div className="mt-0.5 truncate text-[10px] text-muted">{t.note}</div>}
               </div>
 
               <div className={`shrink-0 font-extrabold ${color}`}>{money(t.amountToman)}</div>
-            </div>
+            </button>
           );
         })}
       </div>

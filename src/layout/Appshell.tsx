@@ -190,10 +190,18 @@ export default function Appshell() {
 
   const upsertTx = (payload: Omit<Tx, "id">) => {
     if (editingId) {
-      setTxs((prev) => prev.map((t) => (t.id === editingId ? { ...payload, id: editingId } : t)));
+      setTxs((prev) =>
+        prev
+          .map((t) => (t.id === editingId ? { ...payload, id: editingId } : t))
+          .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+      );
       return;
     }
-    setTxs((prev) => [{ ...payload, id: crypto.randomUUID() }, ...prev]);
+    setTxs((prev) =>
+      [{ ...payload, id: crypto.randomUUID() }, ...prev].sort(
+        (a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)
+      )
+    );
   };
 
   const saveCategory = (category: Category) => {
@@ -376,9 +384,9 @@ function AddTransactionModal({
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
       <div className="absolute bottom-0 left-0 right-0">
-        <div className="mx-auto max-w-[420px] px-3 sm:px-4 pb-6">
-          <div className="rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 overflow-hidden">
-            <div className="px-4 py-3 border-b flex items-center justify-between">
+        <div className="mx-auto max-w-[420px] px-3 sm:px-4 pb-4">
+          <div className="flex max-h-[82vh] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl ring-1 ring-black/5">
+            <div className="shrink-0 px-4 py-3 border-b flex items-center justify-between">
               <div className="font-extrabold text-ink">
                 {initialTx ? "ویرایش تراکنش" : "ثبت تراکنش جدید"}
               </div>
@@ -386,7 +394,10 @@ function AddTransactionModal({
               <div className="flex items-center gap-2">
                 {initialTx && (
                   <button
-                    onClick={onDelete}
+                    onClick={() => {
+                      onDelete();
+                      onClose();
+                    }}
                     className="h-9 w-9 grid place-items-center rounded-xl bg-orange-50 text-orangeExpense hover:bg-orange-100"
                     title="حذف"
                     aria-label="حذف"
@@ -406,7 +417,7 @@ function AddTransactionModal({
               </div>
             </div>
 
-            <div className="px-4 py-4 space-y-4">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-4">
               <div className="rounded-2xl bg-bg ring-1 ring-black/5 p-1 grid grid-cols-3 gap-1 text-xs">
                 <SegBtn active={type === "income"} onClick={() => setType("income")}>
                   درآمد
