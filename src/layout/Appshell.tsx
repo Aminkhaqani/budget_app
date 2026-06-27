@@ -7,11 +7,18 @@ import {
   jalaliMonthBounds,
   jalaliMonthTitle,
   jalaliParts,
+  normalizeDigits,
   shiftJalaliMonth,
   shortJalali,
   todayISO,
 } from "../lib/date";
 import { initialAccounts, initialCategories, initialTransactions } from "../data/initialData";
+
+const STORAGE_KEYS = {
+  txs: "budget-app:txs:v1",
+  categories: "budget-app:categories:v1",
+  accounts: "budget-app:accounts:v1",
+};
 
 type TxType = "income" | "expense" | "transfer";
 
@@ -107,15 +114,26 @@ function formatDayLabel(iso: string) {
 
 /** "1234567" -> "1,234,567" */
 function formatDigitsWithSep(raw: string) {
-  const digits = raw.replace(/[^\d]/g, "");
+  const digits = normalizeDigits(raw).replace(/[^\d]/g, "");
   if (!digits) return "";
   const normalized = String(Number(digits));
   return normalized.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 function parseSepNumber(s: string) {
-  const digits = s.replace(/[^\d]/g, "");
+  const digits = normalizeDigits(s).replace(/[^\d]/g, "");
   return digits ? Number(digits) : 0;
+}
+
+function loadStoredArray<T>(key: string, fallback: T[]) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 /** mini number-to-words (تومان) for MVP */
@@ -163,10 +181,26 @@ export default function Appshell() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [txs, setTxs] = useState<Tx[]>(() =>
-    [...initialTransactions].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+    loadStoredArray<Tx>(STORAGE_KEYS.txs, initialTransactions).sort(
+      (a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)
+    )
   );
-  const [categories, setCategories] = useState<Category[]>(initialCategories);
-  const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
+  const [categories, setCategories] = useState<Category[]>(() =>
+    loadStoredArray<Category>(STORAGE_KEYS.categories, initialCategories)
+  );
+  const [accounts, setAccounts] = useState<Account[]>(() => loadStoredArray<Account>(STORAGE_KEYS.accounts, initialAccounts));
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.txs, JSON.stringify(txs));
+  }, [txs]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.categories, JSON.stringify(categories));
+  }, [categories]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(accounts));
+  }, [accounts]);
 
   const openAdd = () => {
     setEditingId(null);
@@ -211,9 +245,11 @@ export default function Appshell() {
     });
   };
 
-  const deleteCategory = (id: string) => {
+  const deleteCategory = (id: string, targetCategoryId?: string) => {
     setCategories((prev) => prev.filter((c) => c.id !== id));
-    setTxs((prev) => prev.map((t) => (t.categoryId === id ? { ...t, categoryId: undefined } : t)));
+    setTxs((prev) =>
+      prev.map((t) => (t.categoryId === id ? { ...t, categoryId: targetCategoryId || undefined } : t))
+    );
   };
 
   const saveAccount = (account: Account) => {
@@ -235,10 +271,10 @@ export default function Appshell() {
   };
 
   return (
-    <div className="min-h-screen bg-bg text-ink">
+    <div className="min-h-dvh bg-bg text-ink">
       <div className="p-3">
 </div>
-      <div className="mx-auto min-h-screen max-w-[420px] px-3 sm:px-4 pb-28">
+      <div className="mx-auto min-h-dvh max-w-[420px] px-3 sm:px-4 pb-28">
         <Outlet
           context={{
             txs,
@@ -395,6 +431,7 @@ function AddTransactionModal({
                 {initialTx && (
                   <button
                     onClick={() => {
+                      if (!window.confirm("این تراکنش حذف شود؟")) return;
                       onDelete();
                       onClose();
                     }}
@@ -673,7 +710,7 @@ function Dropdown({
   );
 }
 
-function PersianCalendar({
+export function PersianCalendar({
   value,
   onSelect,
   onClose,
@@ -707,7 +744,7 @@ function PersianCalendar({
           aria-label="ماه قبل"
           title="ماه قبل"
         >
-          ›
+          ‹
         </button>
 
         <div className="text-center">
@@ -722,7 +759,7 @@ function PersianCalendar({
           aria-label="ماه بعد"
           title="ماه بعد"
         >
-          ‹
+          ›
         </button>
       </div>
 

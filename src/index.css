@@ -14,14 +14,23 @@
   --orange-soft: #FFF1E6;
 }
 @layer base {
-  html { direction: rtl; }
+  html {
+    direction: rtl;
+    background: #f5f7fb;
+    overscroll-behavior-y: none;
+  }
 
   body {
     margin: 0;
+    min-height: 100dvh;
     background: #f5f7fb; /* بک‌گراند خیلی روشن */
     color: #0f172a;
     font-family: "Vazirmatn", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
   }
+
+  #root { min-height: 100dvh; }
 }
 @layer utilities {
   .bg-navy-900 { background-color: var(--navy-900); }

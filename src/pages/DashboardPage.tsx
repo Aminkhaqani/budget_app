@@ -1,7 +1,16 @@
 import { useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import type { Tx, Category, Account } from "../layout/Appshell";
-import { shortJalali } from "../lib/date";
+import {
+  addDays,
+  currentJalaliMonthBounds,
+  currentJalaliYearBounds,
+  findGregorianForJalali,
+  isBetweenISO,
+  jalaliParts,
+  shortJalali,
+  todayISO,
+} from "../lib/date";
 
 type Period = "month" | "quarter" | "year";
 
@@ -24,6 +33,18 @@ function periodLabel(p: Period) {
   return "سال";
 }
 
+function currentPeriodBounds(period: Period) {
+  if (period === "month") return currentJalaliMonthBounds();
+  if (period === "year") return currentJalaliYearBounds();
+  const today = todayISO();
+  const parts = jalaliParts(today);
+  const quarterStartMonth = Math.floor((parts.month - 1) / 3) * 3 + 1;
+  return {
+    start: findGregorianForJalali(parts.year, quarterStartMonth, 1),
+    end: today,
+  };
+}
+
 function arrow(deltaPct: number) {
   return deltaPct >= 0 ? "↗" : "↘";
 }
@@ -44,19 +65,28 @@ export default function DashboardPage() {
     return map;
   }, [accounts]);
 
+  const periodBounds = useMemo(() => currentPeriodBounds(period), [period]);
+  const periodTxs = useMemo(
+    () => txs.filter((tx) => isBetweenISO(tx.date, periodBounds.start, periodBounds.end)),
+    [txs, periodBounds]
+  );
+
   const { income, expense } = useMemo(() => {
-    const inc = txs.filter((t) => t.type === "income").reduce((a, b) => a + b.amountToman, 0);
-    const exp = txs.filter((t) => t.type === "expense").reduce((a, b) => a + b.amountToman, 0);
+    const inc = periodTxs.filter((t) => t.type === "income").reduce((a, b) => a + b.amountToman, 0);
+    const exp = periodTxs.filter((t) => t.type === "expense").reduce((a, b) => a + b.amountToman, 0);
     return { income: inc, expense: exp };
-  }, [txs]);
+  }, [periodTxs]);
 
   const { incomePrev, expensePrev } = useMemo(() => {
-    const f = period === "month" ? 0.92 : period === "quarter" ? 1.08 : 0.97;
+    const days = Math.max(1, Math.round((new Date(periodBounds.end).getTime() - new Date(periodBounds.start).getTime()) / 86400000) + 1);
+    const prevEnd = addDays(periodBounds.start, -1);
+    const prevStart = addDays(prevEnd, -(days - 1));
+    const prevTxs = txs.filter((tx) => isBetweenISO(tx.date, prevStart, prevEnd));
     return {
-      incomePrev: Math.max(0, Math.round(income * f)),
-      expensePrev: Math.max(0, Math.round(expense * (2 - f))),
+      incomePrev: prevTxs.filter((t) => t.type === "income").reduce((a, b) => a + b.amountToman, 0),
+      expensePrev: prevTxs.filter((t) => t.type === "expense").reduce((a, b) => a + b.amountToman, 0),
     };
-  }, [income, expense, period]);
+  }, [periodBounds, txs]);
 
   const incomeDeltaPct = incomePrev === 0 ? 0 : (income - incomePrev) / incomePrev;
   const expenseDeltaPct = expensePrev === 0 ? 0 : (expense - expensePrev) / expensePrev;

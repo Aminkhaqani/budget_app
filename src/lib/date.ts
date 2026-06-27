@@ -60,8 +60,14 @@ export function jalaliISODate(iso: string) {
   return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
 }
 
+export function normalizeDigits(value: string) {
+  return value
+    .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+}
+
 export function parseJalaliISODate(value: string) {
-  const normalized = value.trim().replaceAll("/", "-");
+  const normalized = normalizeDigits(value).trim().replaceAll("/", "-");
   const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (!match) return null;
   const [, year, month, day] = match;
@@ -128,7 +134,10 @@ export function shiftJalaliMonth(year: number, month: number, delta: number) {
 
 export function currentJalaliMonthBounds() {
   const { year, month } = jalaliParts(todayISO());
-  return jalaliMonthBounds(year, month);
+  return {
+    start: jalaliMonthBounds(year, month).start,
+    end: todayISO(),
+  };
 }
 
 export function jalaliYearBounds(anchorISO = todayISO()) {

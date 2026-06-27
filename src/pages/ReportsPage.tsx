@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useOutletContext } from "react-router-dom";
+import { PersianCalendar } from "../layout/Appshell";
 import type { Account, Category, Tx } from "../layout/Appshell";
 import {
   addDays,
@@ -231,6 +232,7 @@ function Chip({ active, onClick, children }: { active?: boolean; onClick: () => 
 
 function DateInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const [draft, setDraft] = useState(jalaliISODate(value));
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   useEffect(() => {
     setDraft(jalaliISODate(value));
@@ -243,21 +245,48 @@ function DateInput({ label, value, onChange }: { label: string; value: string; o
   };
 
   return (
-    <label className="block rounded-2xl bg-bg px-3 py-2">
-      <span className="text-[11px] text-muted">{label}</span>
-      <input
-        type="text"
-        inputMode="numeric"
-        dir="ltr"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => commit(draft)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit(draft);
-        }}
-        className="mt-1 w-full bg-transparent text-xs font-extrabold text-ink outline-none"
-      />
-    </label>
+    <div className="relative">
+      <label className="block rounded-2xl bg-bg px-3 py-2">
+        <span className="text-[11px] text-muted">{label}</span>
+        <div className="mt-1 flex items-center gap-2">
+          <input
+            type="text"
+            inputMode="numeric"
+            dir="ltr"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => commit(draft)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit(draft);
+            }}
+            className="min-w-0 flex-1 bg-transparent text-xs font-extrabold text-ink outline-none"
+          />
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setCalendarOpen((open) => !open)}
+            className="h-8 w-8 shrink-0 rounded-xl bg-white text-xs ring-1 ring-black/5"
+            aria-label="انتخاب تاریخ"
+            title="انتخاب تاریخ"
+          >
+            📅
+          </button>
+        </div>
+      </label>
+
+      {calendarOpen && (
+        <div className="absolute left-0 right-0 z-30 mt-2">
+          <PersianCalendar
+            value={value}
+            onSelect={(next) => {
+              onChange(next);
+              setCalendarOpen(false);
+            }}
+            onClose={() => setCalendarOpen(false)}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
