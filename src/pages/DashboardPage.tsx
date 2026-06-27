@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
+import { TransactionGroups } from "../components/TransactionCards";
 import type { Tx, Category, Account } from "../layout/Appshell";
 import {
   addDays,
@@ -8,7 +9,6 @@ import {
   findGregorianForJalali,
   isBetweenISO,
   jalaliParts,
-  shortJalali,
   todayISO,
 } from "../lib/date";
 
@@ -53,18 +53,6 @@ export default function DashboardPage() {
   const { txs, categories, accounts, openEdit } = useOutletContext<Ctx>();
   const [period, setPeriod] = useState<Period>("month");
 
-  const byCatTitle = useMemo(() => {
-    const map = new Map<string, string>();
-    categories.forEach((c) => map.set(c.id, c.title));
-    return map;
-  }, [categories]);
-
-  const byAccTitle = useMemo(() => {
-    const map = new Map<string, string>();
-    accounts.forEach((a) => map.set(a.id, a.title));
-    return map;
-  }, [accounts]);
-
   const periodBounds = useMemo(() => currentPeriodBounds(period), [period]);
   const periodTxs = useMemo(
     () => txs.filter((tx) => isBetweenISO(tx.date, periodBounds.start, periodBounds.end)),
@@ -72,38 +60,31 @@ export default function DashboardPage() {
   );
 
   const { income, expense } = useMemo(() => {
-    const inc = periodTxs.filter((t) => t.type === "income").reduce((a, b) => a + b.amountToman, 0);
-    const exp = periodTxs.filter((t) => t.type === "expense").reduce((a, b) => a + b.amountToman, 0);
+    const inc = periodTxs.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + tx.amountToman, 0);
+    const exp = periodTxs.filter((tx) => tx.type === "expense").reduce((sum, tx) => sum + tx.amountToman, 0);
     return { income: inc, expense: exp };
   }, [periodTxs]);
 
   const { incomePrev, expensePrev } = useMemo(() => {
-    const days = Math.max(1, Math.round((new Date(periodBounds.end).getTime() - new Date(periodBounds.start).getTime()) / 86400000) + 1);
+    const days = Math.max(
+      1,
+      Math.round((new Date(periodBounds.end).getTime() - new Date(periodBounds.start).getTime()) / 86400000) + 1
+    );
     const prevEnd = addDays(periodBounds.start, -1);
     const prevStart = addDays(prevEnd, -(days - 1));
     const prevTxs = txs.filter((tx) => isBetweenISO(tx.date, prevStart, prevEnd));
     return {
-      incomePrev: prevTxs.filter((t) => t.type === "income").reduce((a, b) => a + b.amountToman, 0),
-      expensePrev: prevTxs.filter((t) => t.type === "expense").reduce((a, b) => a + b.amountToman, 0),
+      incomePrev: prevTxs.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + tx.amountToman, 0),
+      expensePrev: prevTxs.filter((tx) => tx.type === "expense").reduce((sum, tx) => sum + tx.amountToman, 0),
     };
   }, [periodBounds, txs]);
 
   const incomeDeltaPct = incomePrev === 0 ? 0 : (income - incomePrev) / incomePrev;
   const expenseDeltaPct = expensePrev === 0 ? 0 : (expense - expensePrev) / expensePrev;
 
-  const rowLabel = (t: Tx) => {
-    if (t.type === "transfer") {
-      const f = t.fromAccountId ? byAccTitle.get(t.fromAccountId) : "";
-      const to = t.toAccountId ? byAccTitle.get(t.toAccountId) : "";
-      return `جابجایی${f && to ? `: ${f} ← ${to}` : ""}`;
-    }
-    if (!t.categoryId) return t.type === "income" ? "درآمد" : "هزینه";
-    return byCatTitle.get(t.categoryId) ?? "بدون دسته‌بندی";
-  };
-
   return (
-    <div className="pt-4 sm:pt-6 bg-bg min-h-screen">
-      <div className="-mx-3 sm:-mx-4 -mt-4 sm:-mt-6 px-3 sm:px-4 pt-4 sm:pt-6 pb-6 bg-navy-900 rounded-b-[32px]">
+    <div className="min-h-screen bg-bg pt-4 sm:pt-6">
+      <div className="-mx-3 -mt-4 rounded-b-[32px] bg-navy-900 px-3 pb-6 pt-4 sm:-mx-4 sm:-mt-6 sm:px-4 sm:pt-6">
         <div className="flex items-center justify-between">
           <div className="text-sm font-extrabold text-white">Budget</div>
 
@@ -128,35 +109,8 @@ export default function DashboardPage() {
         <h2 className="text-base font-extrabold text-ink">آخرین تراکنش‌ها</h2>
       </div>
 
-      <div className="mt-3 space-y-2">
-        {txs.slice(0, 8).map((t) => {
-          const isIncome = t.type === "income";
-          const isExpense = t.type === "expense";
-          const rowBg = isIncome ? "bg-emerald-50/60" : isExpense ? "bg-orange-50/70" : "bg-white";
-          const amountTone = isIncome ? "text-emerald-700" : isExpense ? "text-orangeExpense" : "text-transfer";
-
-          return (
-            <div
-              key={t.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => openEdit(t.id)}
-              onKeyDown={(e) => e.key === "Enter" && openEdit(t.id)}
-              className={`flex items-center justify-between gap-3 rounded-2xl px-3.5 py-3 shadow-sm ring-1 ring-black/5 cursor-pointer hover:brightness-[0.98] active:brightness-[0.97] ${rowBg}`}
-              title="برای ویرایش کلیک کن"
-            >
-              <div className="min-w-0">
-                <div className="font-extrabold text-ink truncate">{rowLabel(t)}</div>
-                <div className="text-xs text-muted mt-0.5">{shortJalali(t.date)}</div>
-                {t.note && <div className="mt-0.5 truncate text-[10px] text-muted">{t.note}</div>}
-              </div>
-
-              <div className={`shrink-0 font-extrabold ${amountTone}`}>
-                {money(t.amountToman)} <span className="text-[11px] font-bold text-muted">تومن</span>
-              </div>
-            </div>
-          );
-        })}
+      <div className="mt-3">
+        <TransactionGroups txs={txs} categories={categories} accounts={accounts} openEdit={openEdit} limit={8} />
       </div>
     </div>
   );
@@ -186,7 +140,7 @@ function KpiCard({
   const valueTone = variant === "income" ? "text-navy-900" : "text-orangeExpense";
 
   return (
-    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+    <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
       <div className={`px-4 py-3 ${headerTint}`}>
         <div className="text-xs text-muted">{title}</div>
         <div className={`mt-1 text-xl font-extrabold ${valueTone}`}>{money(value)}</div>
