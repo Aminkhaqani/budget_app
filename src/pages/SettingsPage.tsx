@@ -259,7 +259,7 @@ function ModalHeader({ title, onClose }: { title: string; onClose: () => void })
   );
 }
 
-function CategoryModal({
+export function CategoryModal({
   value,
   onChange,
   onClose,
@@ -312,7 +312,7 @@ function CategoryModal({
   );
 }
 
-function AccountModal({
+export function AccountModal({
   value,
   onChange,
   onClose,

@@ -23,12 +23,27 @@ import {
   saveRemoteTx,
   syncBudgetData,
 } from "../lib/budgetStore";
+import { AccountModal, CategoryModal } from "../pages/SettingsPage";
 
 const STORAGE_KEYS = {
   txs: "budget-app:txs:v1",
   categories: "budget-app:categories:v1",
   accounts: "budget-app:accounts:v1",
 };
+
+const newCategoryDraft = (type: "income" | "expense"): Category => ({
+  id: `c_${type}_${crypto.randomUUID()}`,
+  type,
+  title: "",
+  icon: "",
+  popular: false,
+});
+
+const newAccountDraft = (): Account => ({
+  id: `a_${crypto.randomUUID()}`,
+  title: "",
+  openingBalanceToman: 0,
+});
 
 type TxType = "income" | "expense" | "transfer";
 
@@ -363,8 +378,8 @@ export default function Appshell() {
           onDelete={() => {
             if (editingId) deleteTx(editingId);
           }}
-          onEditItem={(kind, id) => alert(`بعداً: ویرایش ${kind} (${id})`)}
-          onAddItem={(kind) => alert(`بعداً: افزودن ${kind}`)}
+          onSaveCategory={saveCategory}
+          onSaveAccount={saveAccount}
           onSubmit={(tx) => {
             upsertTx(tx);
             setAddOpen(false);
@@ -383,8 +398,8 @@ function AddTransactionModal({
   onClose,
   onSubmit,
   onDelete,
-  onEditItem,
-  onAddItem,
+  onSaveCategory,
+  onSaveAccount,
 }: {
   categories: Category[];
   accounts: Account[];
@@ -392,8 +407,8 @@ function AddTransactionModal({
   onClose: () => void;
   onSubmit: (tx: Omit<Tx, "id">) => void;
   onDelete: () => void;
-  onEditItem: (kind: "category" | "account", id: string) => void;
-  onAddItem: (kind: "category" | "account") => void;
+  onSaveCategory: (category: Category) => void;
+  onSaveAccount: (account: Account) => void;
 }) {
   const [type, setType] = useState<TxType>(initialTx?.type ?? "expense");
   const [amountRaw, setAmountRaw] = useState<string>(initialTx ? String(initialTx.amountToman) : "");
@@ -404,6 +419,9 @@ function AddTransactionModal({
   const [categoryId, setCategoryId] = useState<string>(initialTx?.categoryId ?? "");
   const [fromAccountId, setFromAccountId] = useState<string>(initialTx?.fromAccountId ?? "");
   const [toAccountId, setToAccountId] = useState<string>(initialTx?.toAccountId ?? "");
+  const [categoryDraft, setCategoryDraft] = useState<Category | null>(null);
+  const [accountDraft, setAccountDraft] = useState<Account | null>(null);
+  const [accountTarget, setAccountTarget] = useState<"from" | "to" | null>(null);
 
   // normalize amount on first render (with commas)
   useEffect(() => {
@@ -448,6 +466,45 @@ function AddTransactionModal({
       categoryId,
       note: note.trim() || undefined,
     });
+  };
+
+  const openCategoryForm = (id?: string) => {
+    const existing = id ? categories.find((category) => category.id === id) : undefined;
+    setCategoryDraft(existing ?? newCategoryDraft(type === "income" ? "income" : "expense"));
+  };
+
+  const openAccountForm = (id?: string, target: "from" | "to" | null = null) => {
+    const existing = id ? accounts.find((account) => account.id === id) : undefined;
+    setAccountTarget(target);
+    setAccountDraft(existing ?? newAccountDraft());
+  };
+
+  const submitCategoryDraft = () => {
+    if (!categoryDraft?.title.trim()) return;
+    const next = {
+      ...categoryDraft,
+      title: categoryDraft.title.trim(),
+      icon: categoryDraft.icon?.trim() || undefined,
+    };
+    onSaveCategory(next);
+    setCategoryId(next.id);
+    setCategoryDraft(null);
+  };
+
+  const submitAccountDraft = () => {
+    if (!accountDraft?.title.trim()) return;
+    const next = {
+      ...accountDraft,
+      title: accountDraft.title.trim(),
+      openingBalanceToman: Number(accountDraft.openingBalanceToman) || 0,
+    };
+    onSaveAccount(next);
+    if (accountTarget === "to") setToAccountId(next.id);
+    else if (accountTarget === "from") setFromAccountId(next.id);
+    else if (!fromAccountId) setFromAccountId(next.id);
+    else if (!toAccountId && fromAccountId !== next.id) setToAccountId(next.id);
+    setAccountDraft(null);
+    setAccountTarget(null);
   };
 
   return (
@@ -572,8 +629,8 @@ function AddTransactionModal({
                     valueLabel={catsOfType.find((c) => c.id === categoryId)?.title || ""}
                     items={catsOfType.map((c) => ({ id: c.id, label: `${c.icon ?? ""} ${c.title}`.trim() }))}
                     onChange={(id) => setCategoryId(id)}
-                    onEdit={(id) => onEditItem("category", id)}
-                    onAdd={() => onAddItem("category")}
+                    onEdit={openCategoryForm}
+                    onAdd={() => openCategoryForm()}
                     addLabel="افزودن دسته‌بندی"
                   />
 
@@ -598,8 +655,8 @@ function AddTransactionModal({
                     valueLabel={accounts.find((a) => a.id === fromAccountId)?.title || ""}
                     items={accounts.map((a) => ({ id: a.id, label: a.title }))}
                     onChange={(id) => setFromAccountId(id)}
-                    onEdit={(id) => onEditItem("account", id)}
-                    onAdd={() => onAddItem("account")}
+                    onEdit={(id) => openAccountForm(id, "from")}
+                    onAdd={() => openAccountForm(undefined, "from")}
                     addLabel="افزودن حساب"
                   />
 
@@ -609,8 +666,8 @@ function AddTransactionModal({
                     valueLabel={accounts.find((a) => a.id === toAccountId)?.title || ""}
                     items={accounts.map((a) => ({ id: a.id, label: a.title }))}
                     onChange={(id) => setToAccountId(id)}
-                    onEdit={(id) => onEditItem("account", id)}
-                    onAdd={() => onAddItem("account")}
+                    onEdit={(id) => openAccountForm(id, "to")}
+                    onAdd={() => openAccountForm(undefined, "to")}
                     addLabel="افزودن حساب"
                   />
                 </div>
@@ -635,6 +692,27 @@ function AddTransactionModal({
           </div>
         </div>
       </div>
+
+      {categoryDraft && (
+        <CategoryModal
+          value={categoryDraft}
+          onChange={setCategoryDraft}
+          onClose={() => setCategoryDraft(null)}
+          onSubmit={submitCategoryDraft}
+        />
+      )}
+
+      {accountDraft && (
+        <AccountModal
+          value={accountDraft}
+          onChange={setAccountDraft}
+          onClose={() => {
+            setAccountDraft(null);
+            setAccountTarget(null);
+          }}
+          onSubmit={submitAccountDraft}
+        />
+      )}
     </div>
   );
 }
