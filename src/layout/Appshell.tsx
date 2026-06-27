@@ -14,6 +14,15 @@ import {
   todayISO,
 } from "../lib/date";
 import { initialAccounts, initialCategories, initialTransactions } from "../data/initialData";
+import {
+  deleteRemoteAccount,
+  deleteRemoteCategory,
+  deleteRemoteTx,
+  saveRemoteAccount,
+  saveRemoteCategory,
+  saveRemoteTx,
+  syncBudgetData,
+} from "../lib/budgetStore";
 
 const STORAGE_KEYS = {
   txs: "budget-app:txs:v1",
@@ -190,6 +199,7 @@ export default function Appshell() {
     loadStoredArray<Category>(STORAGE_KEYS.categories, initialCategories)
   );
   const [accounts, setAccounts] = useState<Account[]>(() => loadStoredArray<Account>(STORAGE_KEYS.accounts, initialAccounts));
+  const initialSyncRef = useRef({ txs, categories, accounts });
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.txs, JSON.stringify(txs));
@@ -203,6 +213,21 @@ export default function Appshell() {
     localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(accounts));
   }, [accounts]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    syncBudgetData(initialSyncRef.current).then((remote) => {
+      if (cancelled || !remote) return;
+      setCategories(remote.categories);
+      setAccounts(remote.accounts);
+      setTxs(remote.txs.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const openAdd = () => {
     setEditingId(null);
     setAddOpen(true);
@@ -215,6 +240,7 @@ export default function Appshell() {
 
   const deleteTx = (id: string) => {
     setTxs((prev) => prev.filter((t) => t.id !== id));
+    void deleteRemoteTx(id);
     if (editingId === id) {
       setAddOpen(false);
       setEditingId(null);
@@ -225,18 +251,22 @@ export default function Appshell() {
 
   const upsertTx = (payload: Omit<Tx, "id">) => {
     if (editingId) {
+      const nextTx = { ...payload, id: editingId };
       setTxs((prev) =>
         prev
-          .map((t) => (t.id === editingId ? { ...payload, id: editingId } : t))
+          .map((t) => (t.id === editingId ? nextTx : t))
           .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
       );
+      void saveRemoteTx(nextTx);
       return;
     }
+    const nextTx = { ...payload, id: crypto.randomUUID() };
     setTxs((prev) =>
-      [{ ...payload, id: crypto.randomUUID() }, ...prev].sort(
+      [nextTx, ...prev].sort(
         (a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)
       )
     );
+    void saveRemoteTx(nextTx);
   };
 
   const saveCategory = (category: Category) => {
@@ -244,6 +274,7 @@ export default function Appshell() {
       const exists = prev.some((c) => c.id === category.id);
       return exists ? prev.map((c) => (c.id === category.id ? category : c)) : [...prev, category];
     });
+    void saveRemoteCategory(category);
   };
 
   const deleteCategory = (id: string, targetCategoryId?: string) => {
@@ -251,6 +282,7 @@ export default function Appshell() {
     setTxs((prev) =>
       prev.map((t) => (t.categoryId === id ? { ...t, categoryId: targetCategoryId || undefined } : t))
     );
+    void deleteRemoteCategory(id, targetCategoryId);
   };
 
   const saveAccount = (account: Account) => {
@@ -258,6 +290,7 @@ export default function Appshell() {
       const exists = prev.some((a) => a.id === account.id);
       return exists ? prev.map((a) => (a.id === account.id ? account : a)) : [...prev, account];
     });
+    void saveRemoteAccount(account);
   };
 
   const deleteAccount = (id: string) => {
@@ -269,6 +302,7 @@ export default function Appshell() {
         toAccountId: t.toAccountId === id ? undefined : t.toAccountId,
       }))
     );
+    void deleteRemoteAccount(id);
   };
 
   return (
