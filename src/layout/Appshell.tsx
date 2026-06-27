@@ -215,6 +215,11 @@ export default function Appshell() {
   );
   const [accounts, setAccounts] = useState<Account[]>(() => loadStoredArray<Account>(STORAGE_KEYS.accounts, initialAccounts));
   const initialSyncRef = useRef({ txs, categories, accounts });
+  const liveDataRef = useRef({ txs, categories, accounts });
+
+  useEffect(() => {
+    liveDataRef.current = { txs, categories, accounts };
+  }, [txs, categories, accounts]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.txs, JSON.stringify(txs));
@@ -228,18 +233,35 @@ export default function Appshell() {
     localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(accounts));
   }, [accounts]);
 
+  const applyRemoteData = (remote: { txs: Tx[]; categories: Category[]; accounts: Account[] } | null) => {
+    if (!remote) return;
+    setCategories(remote.categories);
+    setAccounts(remote.accounts);
+    setTxs(remote.txs.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)));
+  };
+
   useEffect(() => {
     let cancelled = false;
 
     syncBudgetData(initialSyncRef.current).then((remote) => {
       if (cancelled || !remote) return;
-      setCategories(remote.categories);
-      setAccounts(remote.accounts);
-      setTxs(remote.txs.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)));
+      applyRemoteData(remote);
     });
 
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const resync = () => {
+      syncBudgetData(liveDataRef.current).then(applyRemoteData);
+    };
+    window.addEventListener("online", resync);
+    window.addEventListener("focus", resync);
+    return () => {
+      window.removeEventListener("online", resync);
+      window.removeEventListener("focus", resync);
     };
   }, []);
 

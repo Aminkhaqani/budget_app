@@ -6,6 +6,7 @@ const supabaseKey =
   import.meta.env.VITE_SUPABASE_ANON_KEY || "sb_publishable__cL2BFSQediduWrazgzRYQ_b6YP9D8r";
 
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+const OFFLINE_QUEUE_KEY = "budget-app:sync-queue:v1";
 
 type CategoryRow = {
   id: string;
@@ -32,8 +33,47 @@ type TxRow = {
   note: string | null;
 };
 
+type RemoteOperation =
+  | { id: string; type: "saveTx"; tx: Tx }
+  | { id: string; type: "deleteTx"; txId: string }
+  | { id: string; type: "saveCategory"; category: Category }
+  | { id: string; type: "deleteCategory"; categoryId: string; targetCategoryId?: string }
+  | { id: string; type: "saveAccount"; account: Account }
+  | { id: string; type: "deleteAccount"; accountId: string };
+
+type QueuedOperation =
+  | { type: "saveTx"; tx: Tx }
+  | { type: "deleteTx"; txId: string }
+  | { type: "saveCategory"; category: Category }
+  | { type: "deleteCategory"; categoryId: string; targetCategoryId?: string }
+  | { type: "saveAccount"; account: Account }
+  | { type: "deleteAccount"; accountId: string };
+
 function warnRemote(error: unknown) {
   console.warn("Budget remote sync failed", error);
+}
+
+function queueId() {
+  return `${Date.now()}_${crypto.randomUUID()}`;
+}
+
+function loadQueue(): RemoteOperation[] {
+  try {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as RemoteOperation[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveQueue(queue: RemoteOperation[]) {
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+}
+
+function enqueue(operation: QueuedOperation) {
+  saveQueue([...loadQueue(), { ...operation, id: queueId() } as RemoteOperation]);
 }
 
 const toCategoryRow = (category: Category): CategoryRow => ({
@@ -86,10 +126,69 @@ const fromTxRow = (row: TxRow): Tx => ({
   note: row.note ?? undefined,
 });
 
+async function runOperation(operation: RemoteOperation) {
+  if (!supabase) throw new Error("Supabase is not configured");
+
+  if (operation.type === "saveTx") {
+    const { error } = await supabase.from("transactions").upsert(toTxRow(operation.tx));
+    if (error) throw error;
+  }
+
+  if (operation.type === "deleteTx") {
+    const { error } = await supabase.from("transactions").delete().eq("id", operation.txId);
+    if (error) throw error;
+  }
+
+  if (operation.type === "saveCategory") {
+    const { error } = await supabase.from("categories").upsert(toCategoryRow(operation.category));
+    if (error) throw error;
+  }
+
+  if (operation.type === "deleteCategory") {
+    const update = await supabase
+      .from("transactions")
+      .update({ category_id: operation.targetCategoryId ?? null })
+      .eq("category_id", operation.categoryId);
+    if (update.error) throw update.error;
+    const deleted = await supabase.from("categories").delete().eq("id", operation.categoryId);
+    if (deleted.error) throw deleted.error;
+  }
+
+  if (operation.type === "saveAccount") {
+    const { error } = await supabase.from("accounts").upsert(toAccountRow(operation.account));
+    if (error) throw error;
+  }
+
+  if (operation.type === "deleteAccount") {
+    const { error } = await supabase.from("accounts").delete().eq("id", operation.accountId);
+    if (error) throw error;
+  }
+}
+
+export async function flushQueuedBudgetOperations() {
+  const queue = loadQueue();
+  if (!queue.length) return true;
+
+  const remaining: RemoteOperation[] = [];
+  for (const operation of queue) {
+    try {
+      await runOperation(operation);
+    } catch (error) {
+      warnRemote(error);
+      remaining.push(operation);
+    }
+  }
+
+  saveQueue(remaining);
+  return remaining.length === 0;
+}
+
 export async function syncBudgetData(local: { txs: Tx[]; categories: Category[]; accounts: Account[] }) {
   if (!supabase) return null;
 
   try {
+    await flushQueuedBudgetOperations();
+
     if (local.categories.length) {
       const { error } = await supabase.from("categories").upsert(local.categories.map(toCategoryRow));
       if (error) throw error;
@@ -128,38 +227,60 @@ export async function syncBudgetData(local: { txs: Tx[]; categories: Category[];
 
 export async function saveRemoteTx(tx: Tx) {
   if (!supabase) return;
-  const { error } = await supabase.from("transactions").upsert(toTxRow(tx));
-  if (error) warnRemote(error);
+  try {
+    await runOperation({ id: queueId(), type: "saveTx", tx });
+  } catch (error) {
+    enqueue({ type: "saveTx", tx });
+    warnRemote(error);
+  }
 }
 
 export async function deleteRemoteTx(id: string) {
   if (!supabase) return;
-  const { error } = await supabase.from("transactions").delete().eq("id", id);
-  if (error) warnRemote(error);
+  try {
+    await runOperation({ id: queueId(), type: "deleteTx", txId: id });
+  } catch (error) {
+    enqueue({ type: "deleteTx", txId: id });
+    warnRemote(error);
+  }
 }
 
 export async function saveRemoteCategory(category: Category) {
   if (!supabase) return;
-  const { error } = await supabase.from("categories").upsert(toCategoryRow(category));
-  if (error) warnRemote(error);
+  try {
+    await runOperation({ id: queueId(), type: "saveCategory", category });
+  } catch (error) {
+    enqueue({ type: "saveCategory", category });
+    warnRemote(error);
+  }
 }
 
 export async function deleteRemoteCategory(id: string, targetCategoryId?: string) {
   if (!supabase) return;
-  const update = await supabase.from("transactions").update({ category_id: targetCategoryId ?? null }).eq("category_id", id);
-  if (update.error) warnRemote(update.error);
-  const deleted = await supabase.from("categories").delete().eq("id", id);
-  if (deleted.error) warnRemote(deleted.error);
+  try {
+    await runOperation({ id: queueId(), type: "deleteCategory", categoryId: id, targetCategoryId });
+  } catch (error) {
+    enqueue({ type: "deleteCategory", categoryId: id, targetCategoryId });
+    warnRemote(error);
+  }
 }
 
 export async function saveRemoteAccount(account: Account) {
   if (!supabase) return;
-  const { error } = await supabase.from("accounts").upsert(toAccountRow(account));
-  if (error) warnRemote(error);
+  try {
+    await runOperation({ id: queueId(), type: "saveAccount", account });
+  } catch (error) {
+    enqueue({ type: "saveAccount", account });
+    warnRemote(error);
+  }
 }
 
 export async function deleteRemoteAccount(id: string) {
   if (!supabase) return;
-  const { error } = await supabase.from("accounts").delete().eq("id", id);
-  if (error) warnRemote(error);
+  try {
+    await runOperation({ id: queueId(), type: "deleteAccount", accountId: id });
+  } catch (error) {
+    enqueue({ type: "deleteAccount", accountId: id });
+    warnRemote(error);
+  }
 }
