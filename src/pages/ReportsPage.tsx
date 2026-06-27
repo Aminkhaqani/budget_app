@@ -275,15 +275,22 @@ function DateInput({ label, value, onChange }: { label: string; value: string; o
       </label>
 
       {calendarOpen && (
-        <div className="absolute left-0 right-0 z-30 mt-2">
-          <PersianCalendar
-            value={value}
-            onSelect={(next) => {
-              onChange(next);
-              setCalendarOpen(false);
-            }}
-            onClose={() => setCalendarOpen(false)}
-          />
+        <div className="fixed inset-0 z-[80]">
+          <div className="absolute inset-0 bg-black/25" onClick={() => setCalendarOpen(false)} />
+          <div className="absolute bottom-0 left-0 right-0">
+            <div className="mx-auto max-w-[420px] px-3 sm:px-4 pb-4">
+              <div className="rounded-t-3xl bg-white p-3 shadow-2xl ring-1 ring-black/10">
+                <PersianCalendar
+                  value={value}
+                  onSelect={(next) => {
+                    onChange(next);
+                    setCalendarOpen(false);
+                  }}
+                  onClose={() => setCalendarOpen(false)}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
