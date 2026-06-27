@@ -1,28 +1,28 @@
+import {
+  addDays as addDateDays,
+  addMonths,
+  format,
+  getDate,
+  getDay,
+  getMonth,
+  getYear,
+  isValid,
+  parse,
+  startOfMonth,
+  startOfYear,
+} from "date-fns-jalali";
+import { faIR } from "date-fns-jalali/locale/fa-IR";
+
 export type JalaliParts = {
   year: number;
   month: number;
   day: number;
 };
 
-const jalaliFormatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian-nu-latn", {
-  year: "numeric",
-  month: "numeric",
-  day: "numeric",
-});
-
-const longJalaliFormatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian-nu-latn", {
-  day: "numeric",
-  month: "long",
-});
-
-const monthJalaliFormatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian-nu-latn", {
-  month: "long",
-  year: "numeric",
-});
-
-const weekdayJalaliFormatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-  weekday: "short",
-});
+function fromISODate(iso: string) {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
 
 export function toISODate(date: Date) {
   const yyyy = date.getFullYear();
@@ -36,28 +36,19 @@ export function todayISO() {
 }
 
 export function addDays(iso: string, delta: number) {
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + delta);
-  return toISODate(d);
+  return toISODate(addDateDays(fromISODate(iso), delta));
 }
 
 export function shortJalali(iso: string) {
-  return longJalaliFormatter.format(new Date(iso + "T00:00:00"));
+  return format(fromISODate(iso), "d MMMM", { locale: faIR });
 }
 
 export function fullJalali(iso: string) {
-  const d = new Date(iso + "T00:00:00");
-  return new Intl.DateTimeFormat("fa-IR-u-ca-persian-nu-latn", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(d);
+  return format(fromISODate(iso), "EEEE d MMMM yyyy", { locale: faIR });
 }
 
 export function jalaliISODate(iso: string) {
-  const p = jalaliParts(iso);
-  return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
+  return format(fromISODate(iso), "yyyy-MM-dd");
 }
 
 export function normalizeDigits(value: string) {
@@ -66,30 +57,37 @@ export function normalizeDigits(value: string) {
     .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
 }
 
-export function parseJalaliISODate(value: string) {
+function normalizeJalaliDateInput(value: string) {
   const normalized = normalizeDigits(value).trim().replaceAll("/", "-");
   const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (!match) return null;
   const [, year, month, day] = match;
-  return findGregorianForJalali(Number(year), Number(month), Number(day));
+  return `${year}-${String(Number(month)).padStart(2, "0")}-${String(Number(day)).padStart(2, "0")}`;
+}
+
+export function parseJalaliISODate(value: string) {
+  const normalized = normalizeJalaliDateInput(value);
+  if (!normalized) return null;
+  const parsed = parse(normalized, "yyyy-MM-dd", new Date());
+  if (!isValid(parsed)) return null;
+  return format(parsed, "yyyy-MM-dd") === normalized ? toISODate(parsed) : null;
 }
 
 export function jalaliParts(iso: string): JalaliParts {
-  const parts = jalaliFormatter.formatToParts(new Date(iso + "T00:00:00"));
+  const date = fromISODate(iso);
   return {
-    year: Number(parts.find((p) => p.type === "year")?.value ?? 0),
-    month: Number(parts.find((p) => p.type === "month")?.value ?? 0),
-    day: Number(parts.find((p) => p.type === "day")?.value ?? 0),
+    year: getYear(date),
+    month: getMonth(date) + 1,
+    day: getDate(date),
   };
 }
 
 export function jalaliMonthTitle(year: number, month: number) {
-  const firstDay = findGregorianForJalali(year, month, 1);
-  return monthJalaliFormatter.format(new Date(firstDay + "T00:00:00"));
+  return format(fromISODate(findGregorianForJalali(year, month, 1)), "MMMM yyyy", { locale: faIR });
 }
 
 export function jalaliWeekday(iso: string) {
-  return weekdayJalaliFormatter.format(new Date(iso + "T00:00:00"));
+  return format(fromISODate(iso), "EEEEEE", { locale: faIR });
 }
 
 export function compareISO(a: string, b: string) {
@@ -101,49 +99,42 @@ export function isBetweenISO(iso: string, from: string, to: string) {
 }
 
 export function findGregorianForJalali(year: number, month: number, day: number) {
-  const approx = new Date(Date.UTC(year + 621, Math.max(0, month - 2), day));
-  for (let offset = -45; offset <= 45; offset += 1) {
-    const d = new Date(approx);
-    d.setUTCDate(approx.getUTCDate() + offset);
-    const iso = toISODate(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-    const parts = jalaliParts(iso);
-    if (parts.year === year && parts.month === month && parts.day === day) return iso;
-  }
-  return toISODate(new Date());
+  const parsed = parse(
+    `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+    "yyyy-MM-dd",
+    new Date()
+  );
+  return isValid(parsed) ? toISODate(parsed) : todayISO();
 }
 
 export function jalaliMonthBounds(year: number, month: number) {
   const start = findGregorianForJalali(year, month, 1);
-  let end = start;
-  for (let iso = start; ; iso = addDays(iso, 1)) {
-    const parts = jalaliParts(iso);
-    if (parts.year !== year || parts.month !== month) break;
-    end = iso;
-  }
-  return { start, end };
+  const nextMonth = shiftJalaliMonth(year, month, 1);
+  return {
+    start,
+    end: addDays(findGregorianForJalali(nextMonth.year, nextMonth.month, 1), -1),
+  };
 }
 
 export function shiftJalaliMonth(year: number, month: number, delta: number) {
-  const zeroBased = year * 12 + (month - 1) + delta;
-  const normalizedMonth = ((zeroBased % 12) + 12) % 12;
+  const shifted = addMonths(fromISODate(findGregorianForJalali(year, month, 1)), delta);
   return {
-    year: Math.floor(zeroBased / 12),
-    month: normalizedMonth + 1,
+    year: getYear(shifted),
+    month: getMonth(shifted) + 1,
   };
 }
 
 export function currentJalaliMonthBounds() {
-  const { year, month } = jalaliParts(todayISO());
+  const today = todayISO();
   return {
-    start: jalaliMonthBounds(year, month).start,
-    end: todayISO(),
+    start: toISODate(startOfMonth(fromISODate(today))),
+    end: today,
   };
 }
 
 export function jalaliYearBounds(anchorISO = todayISO()) {
-  const { year } = jalaliParts(anchorISO);
   return {
-    start: findGregorianForJalali(year, 1, 1),
+    start: toISODate(startOfYear(fromISODate(anchorISO))),
     end: anchorISO,
   };
 }
@@ -160,11 +151,13 @@ export function lastNDaysBounds(days: number, anchorISO = todayISO()) {
 }
 
 export function jalaliMonthKey(iso: string) {
-  const p = jalaliParts(iso);
-  return `${p.year}-${String(p.month).padStart(2, "0")}`;
+  return format(fromISODate(iso), "yyyy-MM");
 }
 
 export function jalaliMonthShortLabel(iso: string) {
-  const p = jalaliParts(iso);
-  return `${p.year}/${String(p.month).padStart(2, "0")}`;
+  return format(fromISODate(iso), "yyyy/MM");
+}
+
+export function jalaliDayOfWeekIndex(iso: string) {
+  return getDay(fromISODate(iso));
 }

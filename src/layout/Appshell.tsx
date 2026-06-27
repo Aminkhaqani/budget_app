@@ -7,6 +7,7 @@ import {
   jalaliMonthBounds,
   jalaliMonthTitle,
   jalaliParts,
+  jalaliDayOfWeekIndex,
   normalizeDigits,
   shiftJalaliMonth,
   shortJalali,
@@ -722,7 +723,7 @@ export function PersianCalendar({
   const selected = jalaliParts(value);
   const [view, setView] = useState({ year: selected.year, month: selected.month });
   const monthBounds = jalaliMonthBounds(view.year, view.month);
-  const firstWeekday = new Date(monthBounds.start + "T00:00:00").getDay();
+  const firstWeekday = jalaliDayOfWeekIndex(monthBounds.start);
   const leading = firstWeekday === 6 ? 0 : firstWeekday + 1;
   const days: string[] = [];
 
