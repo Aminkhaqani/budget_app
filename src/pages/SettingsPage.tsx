@@ -25,7 +25,6 @@ const emptyCategory = (): Category => ({
 });
 
 const emptyAccount = (): Account => ({ id: "", title: "", openingBalanceToman: 0 });
-
 const parseAmount = (value: string) => Number(normalizeDigits(value).replace(/[^\d]/g, "")) || 0;
 
 export default function SettingsPage() {
@@ -63,19 +62,21 @@ export default function SettingsPage() {
 
   const requestDeleteCategory = (category: Category) => {
     if (categoryUsage(category.id) === 0) {
-      if (window.confirm("این دسته‌بندی حذف شود؟")) deleteCategory(category.id);
+      setDeleteCandidate(category);
       return;
     }
     setDeleteCandidate(category);
   };
 
   return (
-    <div className="pt-4 sm:pt-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold">تنظیمات</div>
-        <div className="rounded-2xl bg-white p-1 text-xs ring-1 ring-black/5">
-          <Chip active={tab === "categories"} onClick={() => setTab("categories")}>دسته‌بندی‌ها</Chip>
-          <Chip active={tab === "accounts"} onClick={() => setTab("accounts")}>حساب‌ها</Chip>
+    <div className="space-y-4 pb-4">
+      <div className="sticky top-0 z-30 -mx-3 bg-bg/95 px-3 pt-4 pb-3 backdrop-blur sm:-mx-4 sm:px-4 sm:pt-6">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold">تنظیمات</div>
+          <div className="rounded-2xl bg-white p-1 text-xs ring-1 ring-black/5">
+            <Chip active={tab === "categories"} onClick={() => setTab("categories")}>دسته‌بندی‌ها</Chip>
+            <Chip active={tab === "accounts"} onClick={() => setTab("accounts")}>حساب‌ها</Chip>
+          </div>
         </div>
       </div>
 
@@ -368,14 +369,14 @@ function DeleteCategoryModal({
 }) {
   const [mode, setMode] = useState<"uncategorized" | "move">("uncategorized");
   const [targetId, setTargetId] = useState(alternatives[0]?.id ?? "");
-  const canMove = mode === "uncategorized" || !!targetId;
+  const canConfirm = mode === "uncategorized" || !!targetId;
 
   return (
     <ModalShell onClose={onClose}>
       <ModalHeader title="حذف دسته‌بندی" onClose={onClose} />
       <div className="space-y-3">
         <div className="rounded-2xl bg-bg px-3 py-3 text-xs leading-6 text-muted">
-          این دسته‌بندی در {new Intl.NumberFormat("fa-IR").format(usage)} تراکنش استفاده شده. قبل از حذف مشخص کن تراکنش‌ها چه شوند.
+          دسته‌بندی «{category.title}» در {new Intl.NumberFormat("fa-IR").format(usage)} تراکنش استفاده شده. قبل از حذف مشخص کن تراکنش‌ها چه شوند.
         </div>
 
         <div className="grid grid-cols-2 gap-2 rounded-2xl bg-bg p-1 text-xs">
@@ -406,15 +407,25 @@ function DeleteCategoryModal({
           </select>
         )}
 
-        <button
-          disabled={!canMove}
-          onClick={() => onDelete(mode === "move" ? targetId : undefined)}
-          className={`w-full rounded-2xl px-4 py-3 text-sm font-extrabold text-white ${
-            canMove ? "bg-orangeExpense" : "bg-slate-300"
-          }`}
-        >
-          حذف {category.title}
-        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl bg-bg px-4 py-3 text-sm font-extrabold text-muted"
+          >
+            لغو
+          </button>
+          <button
+            type="button"
+            disabled={!canConfirm}
+            onClick={() => onDelete(mode === "move" ? targetId : undefined)}
+            className={`rounded-2xl px-4 py-3 text-sm font-extrabold text-white ${
+              canConfirm ? "bg-orangeExpense" : "bg-slate-300"
+            }`}
+          >
+            تایید حذف
+          </button>
+        </div>
       </div>
     </ModalShell>
   );

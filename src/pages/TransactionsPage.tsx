@@ -22,19 +22,21 @@ export default function TransactionsPage() {
   }, [txs, filter]);
 
   return (
-    <div className="pt-4 sm:pt-6">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold">تراکنش‌ها</div>
+    <div className="space-y-4 pb-4">
+      <div className="sticky top-0 z-30 -mx-3 bg-bg/95 px-3 pt-4 pb-3 backdrop-blur sm:-mx-4 sm:px-4 sm:pt-6">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold">تراکنش‌ها</div>
 
-        <div className="grid grid-cols-4 gap-1 rounded-2xl bg-white p-1 text-xs ring-1 ring-black/5">
-          <Chip active={filter === "all"} onClick={() => setFilter("all")}>همه</Chip>
-          <Chip active={filter === "income"} onClick={() => setFilter("income")}>درآمد</Chip>
-          <Chip active={filter === "expense"} onClick={() => setFilter("expense")}>هزینه</Chip>
-          <Chip active={filter === "transfer"} onClick={() => setFilter("transfer")}>جابجایی</Chip>
+          <div className="grid grid-cols-4 gap-1 rounded-2xl bg-white p-1 text-xs ring-1 ring-black/5">
+            <Chip active={filter === "all"} onClick={() => setFilter("all")}>همه</Chip>
+            <Chip active={filter === "income"} onClick={() => setFilter("income")}>درآمد</Chip>
+            <Chip active={filter === "expense"} onClick={() => setFilter("expense")}>هزینه</Chip>
+            <Chip active={filter === "transfer"} onClick={() => setFilter("transfer")}>جابجایی</Chip>
+          </div>
         </div>
       </div>
 
-      <div className="mt-4">
+      <div>
         <TransactionGroups txs={list} categories={categories} accounts={accounts} openEdit={openEdit} />
       </div>
     </div>

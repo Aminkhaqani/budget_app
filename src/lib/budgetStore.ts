@@ -27,6 +27,7 @@ type TxRow = {
   type: "income" | "expense" | "transfer";
   amount_toman: number;
   date: string;
+  created_at?: string;
   category_id: string | null;
   from_account_id: string | null;
   to_account_id: string | null;
@@ -109,6 +110,7 @@ const toTxRow = (tx: Tx): TxRow => ({
   type: tx.type,
   amount_toman: tx.amountToman,
   date: tx.date,
+  created_at: tx.createdAt,
   category_id: tx.categoryId ?? null,
   from_account_id: tx.fromAccountId ?? null,
   to_account_id: tx.toAccountId ?? null,
@@ -120,6 +122,7 @@ const fromTxRow = (row: TxRow): Tx => ({
   type: row.type,
   amountToman: row.amount_toman,
   date: row.date,
+  createdAt: row.created_at,
   categoryId: row.category_id ?? undefined,
   fromAccountId: row.from_account_id ?? undefined,
   toAccountId: row.to_account_id ?? undefined,
@@ -207,7 +210,11 @@ export async function syncBudgetData(local: { txs: Tx[]; categories: Category[];
     const [categoriesResult, accountsResult, txsResult] = await Promise.all([
       supabase.from("categories").select("id,type,title,icon,popular").order("type").order("title"),
       supabase.from("accounts").select("id,title,opening_balance_toman").order("title"),
-      supabase.from("transactions").select("id,type,amount_toman,date,category_id,from_account_id,to_account_id,note").order("date", { ascending: false }),
+      supabase
+        .from("transactions")
+        .select("id,type,amount_toman,date,created_at,category_id,from_account_id,to_account_id,note")
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false }),
     ]);
 
     if (categoriesResult.error) throw categoriesResult.error;

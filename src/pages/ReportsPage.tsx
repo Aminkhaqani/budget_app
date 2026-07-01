@@ -144,8 +144,8 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="pt-4 sm:pt-6 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 pb-4">
+      <div className="sticky top-0 z-30 -mx-3 flex items-center justify-between bg-bg/95 px-3 pt-4 pb-3 backdrop-blur sm:-mx-4 sm:px-4 sm:pt-6">
         <div className="text-sm font-semibold">گزارش</div>
         <button
           onClick={exportExcel}

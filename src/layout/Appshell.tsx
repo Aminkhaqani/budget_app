@@ -53,6 +53,7 @@ export type Tx = {
 
   amountToman: number;
   date: string; // YYYY-MM-DD
+  createdAt?: string;
 
   categoryId?: string;
 
@@ -150,6 +151,10 @@ function parseSepNumber(s: string) {
   return digits ? Number(digits) : 0;
 }
 
+function normalizeAmountInput(s: string) {
+  return normalizeDigits(s).replace(/[^\d,]/g, "");
+}
+
 function loadStoredArray<T>(key: string, fallback: T[]) {
   try {
     const raw = localStorage.getItem(key);
@@ -159,6 +164,15 @@ function loadStoredArray<T>(key: string, fallback: T[]) {
   } catch {
     return fallback;
   }
+}
+
+function sortTxs(txs: Tx[]) {
+  return [...txs].sort(
+    (a, b) =>
+      b.date.localeCompare(a.date) ||
+      (b.createdAt ?? "").localeCompare(a.createdAt ?? "") ||
+      b.id.localeCompare(a.id)
+  );
 }
 
 /** mini number-to-words (تومان) for MVP */
@@ -206,9 +220,7 @@ export default function Appshell() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [txs, setTxs] = useState<Tx[]>(() =>
-    loadStoredArray<Tx>(STORAGE_KEYS.txs, initialTransactions).sort(
-      (a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)
-    )
+    sortTxs(loadStoredArray<Tx>(STORAGE_KEYS.txs, initialTransactions))
   );
   const [categories, setCategories] = useState<Category[]>(() =>
     loadStoredArray<Category>(STORAGE_KEYS.categories, initialCategories)
@@ -237,7 +249,7 @@ export default function Appshell() {
     if (!remote) return;
     setCategories(remote.categories);
     setAccounts(remote.accounts);
-    setTxs(remote.txs.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)));
+    setTxs(sortTxs(remote.txs));
   };
 
   useEffect(() => {
@@ -288,20 +300,24 @@ export default function Appshell() {
 
   const upsertTx = (payload: Omit<Tx, "id">) => {
     if (editingId) {
-      const nextTx = { ...payload, id: editingId };
+      const currentTx = txs.find((t) => t.id === editingId);
+      const nextTx = { ...payload, id: editingId, createdAt: currentTx?.createdAt ?? new Date().toISOString() };
       setTxs((prev) =>
         prev
           .map((t) => (t.id === editingId ? nextTx : t))
-          .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+          .sort(
+            (a, b) =>
+              b.date.localeCompare(a.date) ||
+              (b.createdAt ?? "").localeCompare(a.createdAt ?? "") ||
+              b.id.localeCompare(a.id)
+          )
       );
       void saveRemoteTx(nextTx);
       return;
     }
-    const nextTx = { ...payload, id: crypto.randomUUID() };
+    const nextTx = { ...payload, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
     setTxs((prev) =>
-      [nextTx, ...prev].sort(
-        (a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)
-      )
+      sortTxs([nextTx, ...prev])
     );
     void saveRemoteTx(nextTx);
   };
@@ -584,7 +600,8 @@ function AddTransactionModal({
               <div className="space-y-2">
                 <input
                   value={amountRaw}
-                  onChange={(e) => setAmountRaw(formatDigitsWithSep(e.target.value))}
+                  onChange={(e) => setAmountRaw(normalizeAmountInput(e.target.value))}
+                  onBlur={() => setAmountRaw((value) => formatDigitsWithSep(value))}
                   inputMode="numeric"
                   placeholder="مبلغ (تومان)"
                   className="w-full rounded-2xl bg-white px-4 py-3 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"

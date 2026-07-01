@@ -15,7 +15,16 @@ function groupByDate(txs: Tx[]) {
   txs.forEach((tx) => {
     groups.set(tx.date, [...(groups.get(tx.date) ?? []), tx]);
   });
-  return [...groups.entries()].sort(([a], [b]) => b.localeCompare(a));
+  return [...groups.entries()]
+    .map(([date, rows]) => [
+      date,
+      [...rows].sort(
+        (a, b) =>
+          (b.createdAt ?? "").localeCompare(a.createdAt ?? "") ||
+          b.id.localeCompare(a.id)
+      ),
+    ] as const)
+    .sort(([a], [b]) => b.localeCompare(a));
 }
 
 function typeLabel(type: Tx["type"]) {
