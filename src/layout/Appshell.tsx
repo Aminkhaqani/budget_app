@@ -269,11 +269,18 @@ export default function Appshell() {
     const resync = () => {
       syncBudgetData(liveDataRef.current).then(applyRemoteData);
     };
+    const interval = window.setInterval(() => {
+      if (!navigator.onLine || document.visibilityState !== "visible") return;
+      resync();
+    }, 10000);
     window.addEventListener("online", resync);
     window.addEventListener("focus", resync);
+    document.addEventListener("visibilitychange", resync);
     return () => {
+      window.clearInterval(interval);
       window.removeEventListener("online", resync);
       window.removeEventListener("focus", resync);
+      document.removeEventListener("visibilitychange", resync);
     };
   }, []);
 
