@@ -7,7 +7,6 @@ const supabaseKey =
 
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 const OFFLINE_QUEUE_KEY = "budget-app:sync-queue:v1";
-const LOCAL_MIGRATION_KEY = "budget-app:local-migrated-to-supabase:v1";
 
 type CategoryRow = {
   id: string;
@@ -187,30 +186,11 @@ export async function flushQueuedBudgetOperations() {
   return remaining.length === 0;
 }
 
-export async function syncBudgetData(local: { txs: Tx[]; categories: Category[]; accounts: Account[] }) {
+export async function syncBudgetData() {
   if (!supabase) return null;
 
   try {
     await flushQueuedBudgetOperations();
-
-    if (!localStorage.getItem(LOCAL_MIGRATION_KEY)) {
-      if (local.categories.length) {
-        const { error } = await supabase.from("categories").upsert(local.categories.map(toCategoryRow));
-        if (error) throw error;
-      }
-
-      if (local.accounts.length) {
-        const { error } = await supabase.from("accounts").upsert(local.accounts.map(toAccountRow));
-        if (error) throw error;
-      }
-
-      if (local.txs.length) {
-        const { error } = await supabase.from("transactions").upsert(local.txs.map(toTxRow));
-        if (error) throw error;
-      }
-
-      localStorage.setItem(LOCAL_MIGRATION_KEY, new Date().toISOString());
-    }
 
     const [categoriesResult, accountsResult, txsResult] = await Promise.all([
       supabase.from("categories").select("id,type,title,icon,popular").order("type").order("title"),
@@ -235,6 +215,23 @@ export async function syncBudgetData(local: { txs: Tx[]; categories: Category[];
     warnRemote(error);
     return null;
   }
+}
+
+export function subscribeBudgetChanges(onChange: () => void) {
+  if (!supabase) return () => undefined;
+
+  const channel = supabase
+    .channel(`budget-data-${crypto.randomUUID()}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "categories" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "accounts" }, onChange)
+    .subscribe((status) => {
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") warnRemote(`Realtime ${status}`);
+    });
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
 }
 
 export async function saveRemoteTx(tx: Tx) {

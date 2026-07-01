@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   addDays,
@@ -21,6 +21,7 @@ import {
   saveRemoteAccount,
   saveRemoteCategory,
   saveRemoteTx,
+  subscribeBudgetChanges,
   syncBudgetData,
 } from "../lib/budgetStore";
 import { AccountModal, CategoryModal } from "../pages/SettingsPage";
@@ -226,12 +227,6 @@ export default function Appshell() {
     loadStoredArray<Category>(STORAGE_KEYS.categories, initialCategories)
   );
   const [accounts, setAccounts] = useState<Account[]>(() => loadStoredArray<Account>(STORAGE_KEYS.accounts, initialAccounts));
-  const initialSyncRef = useRef({ txs, categories, accounts });
-  const liveDataRef = useRef({ txs, categories, accounts });
-
-  useEffect(() => {
-    liveDataRef.current = { txs, categories, accounts };
-  }, [txs, categories, accounts]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.txs, JSON.stringify(txs));
@@ -245,17 +240,17 @@ export default function Appshell() {
     localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(accounts));
   }, [accounts]);
 
-  const applyRemoteData = (remote: { txs: Tx[]; categories: Category[]; accounts: Account[] } | null) => {
+  const applyRemoteData = useCallback((remote: { txs: Tx[]; categories: Category[]; accounts: Account[] } | null) => {
     if (!remote) return;
     setCategories(remote.categories);
     setAccounts(remote.accounts);
     setTxs(sortTxs(remote.txs));
-  };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    syncBudgetData(initialSyncRef.current).then((remote) => {
+    syncBudgetData().then((remote) => {
       if (cancelled || !remote) return;
       applyRemoteData(remote);
     });
@@ -263,11 +258,11 @@ export default function Appshell() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyRemoteData]);
 
   useEffect(() => {
     const resync = () => {
-      syncBudgetData(liveDataRef.current).then(applyRemoteData);
+      syncBudgetData().then(applyRemoteData);
     };
     const interval = window.setInterval(() => {
       if (!navigator.onLine || document.visibilityState !== "visible") return;
@@ -282,7 +277,23 @@ export default function Appshell() {
       window.removeEventListener("focus", resync);
       document.removeEventListener("visibilitychange", resync);
     };
-  }, []);
+  }, [applyRemoteData]);
+
+  useEffect(() => {
+    let syncTimeout: number | undefined;
+    const resyncSoon = () => {
+      window.clearTimeout(syncTimeout);
+      syncTimeout = window.setTimeout(() => {
+        if (!navigator.onLine) return;
+        syncBudgetData().then(applyRemoteData);
+      }, 250);
+    };
+    const unsubscribe = subscribeBudgetChanges(resyncSoon);
+    return () => {
+      window.clearTimeout(syncTimeout);
+      unsubscribe();
+    };
+  }, [applyRemoteData]);
 
   const openAdd = () => {
     setEditingId(null);
