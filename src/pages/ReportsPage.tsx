@@ -4,14 +4,13 @@ import { useOutletContext } from "react-router-dom";
 import { PersianCalendar } from "../layout/Appshell";
 import type { Account, Category, Tx } from "../layout/Appshell";
 import {
-  addDays,
   currentJalaliMonthBounds,
   currentJalaliYearBounds,
   fullJalali,
   isBetweenISO,
   jalaliISODate,
-  jalaliMonthKey,
-  jalaliMonthShortLabel,
+  jalaliMonthBounds,
+  jalaliParts,
   lastNDaysBounds,
   parseJalaliISODate,
   todayISO,
@@ -28,6 +27,7 @@ type RangePreset = "month" | "year" | "last30" | "custom";
 
 const money = (n: number) => new Intl.NumberFormat("fa-IR").format(Math.abs(Math.round(n)));
 const chartColors = ["#FF7A1A", "#0B1B3A", "#10B981", "#6366F1", "#F59E0B", "#334155", "#EF4444"];
+const jalaliMonthNames = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
 
 export default function ReportsPage() {
   const { txs, categories, accounts, openEdit } = useOutletContext<Ctx>();
@@ -96,18 +96,17 @@ export default function ReportsPage() {
   );
 
   const monthlySeries = useMemo(() => {
-    const keys = new Map<string, { label: string; income: number; expense: number }>();
-    const start = addDays(from, -1);
-    filteredTxs.forEach((tx) => {
-      const key = jalaliMonthKey(tx.date);
-      if (!keys.has(key)) keys.set(key, { label: jalaliMonthShortLabel(tx.date), income: 0, expense: 0 });
-      const bucket = keys.get(key)!;
-      if (tx.type === "income") bucket.income += tx.amountToman;
-      if (tx.type === "expense") bucket.expense += tx.amountToman;
+    const year = jalaliParts(todayISO()).year;
+    return jalaliMonthNames.map((label, index) => {
+      const bounds = jalaliMonthBounds(year, index + 1);
+      const monthTxs = txs.filter((tx) => isBetweenISO(tx.date, bounds.start, bounds.end));
+      return {
+        label,
+        income: monthTxs.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + tx.amountToman, 0),
+        expense: monthTxs.filter((tx) => tx.type === "expense").reduce((sum, tx) => sum + tx.amountToman, 0),
+      };
     });
-    if (!keys.size) keys.set(jalaliMonthKey(start), { label: jalaliMonthShortLabel(start), income: 0, expense: 0 });
-    return [...keys.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, row]) => row);
-  }, [filteredTxs, from]);
+  }, [txs]);
 
   const exportExcel = () => {
     const rows = filteredTxs.map((tx) => ({
@@ -176,7 +175,7 @@ export default function ReportsPage() {
 
       <PieChart title="هزینه‌ها" total={totals.expense} slices={expenseSlices} emptyText="هزینه‌ای در این بازه نیست." />
       <PieChart title="درآمدها" total={totals.income} slices={incomeSlices} emptyText="درآمدی در این بازه نیست." />
-      <MonthlyLineChart rows={monthlySeries} />
+      <MonthlyBarChart rows={monthlySeries} />
 
       <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
         <div className="text-sm font-extrabold text-ink">تراکنش‌های بازه</div>
@@ -355,12 +354,15 @@ function PieChart({
 
           <div className="min-w-0 flex-1 space-y-2">
             {slices.slice(0, 5).map((slice, index) => (
-              <div key={slice.label} className="flex items-center justify-between gap-2 text-xs">
+              <div key={slice.label} className="grid grid-cols-[1fr_auto] items-center gap-2 text-xs">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: chartColors[index % chartColors.length] }} />
                   <span className="truncate font-bold text-ink">{slice.label}</span>
                 </div>
-                <span className="shrink-0 font-extrabold text-muted">{Math.round((slice.value / total) * 100)}٪</span>
+                <div className="shrink-0 text-left leading-4">
+                  <div className="font-extrabold text-muted">{Math.round((slice.value / total) * 100)}٪</div>
+                  <div className="text-[9px] font-bold text-muted/70">{money(slice.value)}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -370,18 +372,8 @@ function PieChart({
   );
 }
 
-function MonthlyLineChart({ rows }: { rows: { label: string; income: number; expense: number }[] }) {
-  const width = 320;
-  const height = 150;
+function MonthlyBarChart({ rows }: { rows: { label: string; income: number; expense: number }[] }) {
   const max = Math.max(1, ...rows.flatMap((row) => [row.income, row.expense]));
-  const points = (field: "income" | "expense") =>
-    rows
-      .map((row, index) => {
-        const x = rows.length === 1 ? width / 2 : (index / (rows.length - 1)) * width;
-        const y = height - (row[field] / max) * (height - 18) - 9;
-        return `${x},${y}`;
-      })
-      .join(" ");
 
   return (
     <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
@@ -393,19 +385,30 @@ function MonthlyLineChart({ rows }: { rows: { label: string; income: number; exp
         </div>
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-2xl bg-bg p-2">
-        <svg viewBox={`0 0 ${width} ${height + 28}`} className="h-48 w-full">
-          <polyline points={points("income")} fill="none" stroke="#0B1B3A" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          <polyline points={points("expense")} fill="none" stroke="#FF7A1A" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          {rows.map((row, index) => {
-            const x = rows.length === 1 ? width / 2 : (index / (rows.length - 1)) * width;
+      <div className="mt-4 overflow-x-auto rounded-2xl bg-bg px-3 py-4">
+        <div className="flex h-52 min-w-[620px] items-end gap-3">
+          {rows.map((row) => {
+            const incomeHeight = row.income > 0 ? Math.max(4, (row.income / max) * 150) : 2;
+            const expenseHeight = row.expense > 0 ? Math.max(4, (row.expense / max) * 150) : 2;
             return (
-              <text key={row.label} x={x} y={height + 20} textAnchor="middle" className="fill-slate-500 text-[10px]">
-                {row.label}
-              </text>
+              <div key={row.label} className="flex min-w-10 flex-1 flex-col items-center justify-end gap-2">
+                <div className="flex h-[150px] items-end gap-1.5">
+                  <div
+                    className="w-3 rounded-t-lg bg-navy-900"
+                    style={{ height: `${incomeHeight}px` }}
+                    title={`${row.label} درآمد ${money(row.income)}`}
+                  />
+                  <div
+                    className="w-3 rounded-t-lg bg-orange"
+                    style={{ height: `${expenseHeight}px` }}
+                    title={`${row.label} هزینه ${money(row.expense)}`}
+                  />
+                </div>
+                <div className="max-w-12 truncate text-[10px] font-bold text-muted">{row.label}</div>
+              </div>
             );
           })}
-        </svg>
+        </div>
       </div>
     </div>
   );

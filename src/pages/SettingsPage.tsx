@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useOutletContext } from "react-router-dom";
-import { normalizeDigits } from "../lib/date";
+import { fullJalali, jalaliISODate, normalizeDigits } from "../lib/date";
 import type { Account, Category, PlannedItem, Tx } from "../layout/Appshell";
 
 type Ctx = {
@@ -15,6 +15,7 @@ type Ctx = {
   deleteAccount: (id: string) => void;
   savePlannedItem: (item: PlannedItem) => void;
   deletePlannedItem: (id: string) => void;
+  openEdit: (id: string) => void;
 };
 
 type Tab = "categories" | "accounts" | "plans";
@@ -37,6 +38,7 @@ const emptyPlannedItem = (): PlannedItem => ({
   active: true,
 });
 const parseAmount = (value: string) => Number(normalizeDigits(value).replace(/[^\d]/g, "")) || 0;
+const money = (value: number) => new Intl.NumberFormat("fa-IR").format(Math.abs(Math.round(value)));
 
 export default function SettingsPage() {
   const {
@@ -50,14 +52,21 @@ export default function SettingsPage() {
     deleteAccount,
     savePlannedItem,
     deletePlannedItem,
+    openEdit,
   } = useOutletContext<Ctx>();
   const [tab, setTab] = useState<Tab>("categories");
   const [categoryDraft, setCategoryDraft] = useState<Category | null>(null);
   const [accountDraft, setAccountDraft] = useState<Account | null>(null);
   const [plannedDraft, setPlannedDraft] = useState<PlannedItem | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<Category | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
 
   const categoryUsage = (categoryId: string) => txs.filter((tx) => tx.categoryId === categoryId).length;
+  const categoryTxs = (categoryId: string) =>
+    txs
+      .filter((tx) => tx.categoryId === categoryId)
+      .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id.localeCompare(a.id));
+  const categoryTotal = (categoryId: string) => categoryTxs(categoryId).reduce((sum, tx) => sum + tx.amountToman, 0);
 
   const submitCategory = (category: Category) => {
     const title = category.title.trim();
@@ -138,6 +147,8 @@ export default function SettingsPage() {
                 key={category.id}
                 category={category}
                 usage={categoryUsage(category.id)}
+                totalAmount={categoryTotal(category.id)}
+                onOpen={() => setSelectedCategory(category)}
                 onEdit={() => setCategoryDraft(category)}
                 onDelete={() => requestDeleteCategory(category)}
               />
@@ -150,6 +161,8 @@ export default function SettingsPage() {
                 key={category.id}
                 category={category}
                 usage={categoryUsage(category.id)}
+                totalAmount={categoryTotal(category.id)}
+                onOpen={() => setSelectedCategory(category)}
                 onEdit={() => setCategoryDraft(category)}
                 onDelete={() => requestDeleteCategory(category)}
               />
@@ -218,6 +231,18 @@ export default function SettingsPage() {
         />
       )}
 
+      {selectedCategory && (
+        <CategoryTransactionsModal
+          category={selectedCategory}
+          txs={categoryTxs(selectedCategory.id)}
+          onClose={() => setSelectedCategory(null)}
+          onOpenTx={(id) => {
+            setSelectedCategory(null);
+            openEdit(id);
+          }}
+        />
+      )}
+
       {deleteCandidate && (
         <DeleteCategoryModal
           category={deleteCandidate}
@@ -257,27 +282,101 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function CategoryRow({
   category,
   usage,
+  totalAmount,
+  onOpen,
   onEdit,
   onDelete,
 }: {
   category: Category;
   usage: number;
+  totalAmount: number;
+  onOpen: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-bg px-3 py-2">
-      <div className="min-w-0">
-        <div className="truncate text-sm font-extrabold text-ink">
-          {category.icon ? `${category.icon} ` : ""}
-          {category.title}
-        </div>
-        <div className="text-[11px] text-muted">
-          {category.popular ? "پرکاربرد" : "معمولی"} · {new Intl.NumberFormat("fa-IR").format(usage)} تراکنش
-        </div>
-      </div>
+    <div className="flex items-center justify-between gap-2 rounded-2xl bg-bg px-2 py-2">
+      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-1 py-1 text-right active:bg-white/70">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-lg shadow-sm ring-1 ring-black/5">
+          {category.icon || "•"}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-extrabold text-ink">{category.title}</span>
+          <span className="block truncate text-[11px] text-muted">
+            {category.popular ? "پرکاربرد" : "معمولی"} · {new Intl.NumberFormat("fa-IR").format(usage)} تراکنش · {money(totalAmount)}
+          </span>
+        </span>
+      </button>
       <RowActions onEdit={onEdit} onDelete={onDelete} />
     </div>
+  );
+}
+
+function CategoryTransactionsModal({
+  category,
+  txs,
+  onClose,
+  onOpenTx,
+}: {
+  category: Category;
+  txs: Tx[];
+  onClose: () => void;
+  onOpenTx: (id: string) => void;
+}) {
+  const total = txs.reduce((sum, tx) => sum + tx.amountToman, 0);
+  const latest = txs[0]?.date;
+  const tone = category.type === "income" ? "text-emerald-700 bg-emerald-50" : "text-orangeExpense bg-orange-50";
+
+  return (
+    <ModalShell onClose={onClose}>
+      <ModalHeader title="تراکنش‌های دسته‌بندی" onClose={onClose} />
+      <div className="space-y-3">
+        <div className="rounded-3xl bg-bg p-3">
+          <div className="flex items-center gap-3">
+            <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-xl ${tone}`}>
+              {category.icon || "•"}
+            </span>
+            <div className="min-w-0">
+              <div className="truncate text-base font-extrabold text-ink">{category.title}</div>
+              <div className="text-[11px] font-bold text-muted">{money(txs.length)} تراکنش ثبت‌شده</div>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-2xl bg-white px-3 py-2 ring-1 ring-black/5">
+              <div className="text-[10px] text-muted">مجموع</div>
+              <div className="mt-1 text-sm font-extrabold text-ink">{money(total)}</div>
+            </div>
+            <div className="rounded-2xl bg-white px-3 py-2 ring-1 ring-black/5">
+              <div className="text-[10px] text-muted">آخرین تراکنش</div>
+              <div className="mt-1 text-xs font-extrabold text-ink">{latest ? jalaliISODate(latest) : "ندارد"}</div>
+            </div>
+          </div>
+        </div>
+
+        {txs.length === 0 ? (
+          <div className="rounded-2xl bg-bg px-3 py-4 text-center text-xs text-muted">هنوز تراکنشی برای این دسته ثبت نشده.</div>
+        ) : (
+          <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
+            {txs.map((tx) => (
+              <button
+                key={tx.id}
+                type="button"
+                onClick={() => onOpenTx(tx.id)}
+                className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2 text-right ring-1 ring-black/5 active:bg-bg"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-extrabold text-ink">{tx.note || fullJalali(tx.date)}</div>
+                  <div className="mt-0.5 truncate text-[11px] text-muted">{jalaliISODate(tx.date)}</div>
+                </div>
+                <div className={`shrink-0 text-sm font-extrabold ${category.type === "income" ? "text-emerald-700" : "text-orangeExpense"}`}>
+                  {money(tx.amountToman)}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </ModalShell>
   );
 }
 
