@@ -26,6 +26,7 @@ type Ctx = {
 type RangePreset = "month" | "year" | "last30" | "custom";
 
 const money = (n: number) => new Intl.NumberFormat("fa-IR").format(Math.abs(Math.round(n)));
+const percent = (n: number) => new Intl.NumberFormat("fa-IR").format(Math.round(n));
 const chartColors = ["#FF7A1A", "#0B1B3A", "#10B981", "#6366F1", "#F59E0B", "#334155", "#EF4444"];
 const jalaliMonthNames = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
 
@@ -359,9 +360,8 @@ function PieChart({
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: chartColors[index % chartColors.length] }} />
                   <span className="truncate font-bold text-ink">{slice.label}</span>
                 </div>
-                <div className="shrink-0 text-left leading-4">
-                  <div className="font-extrabold text-muted">{Math.round((slice.value / total) * 100)}٪</div>
-                  <div className="text-[9px] font-bold text-muted/70">{money(slice.value)}</div>
+                <div className="shrink-0 whitespace-nowrap text-[10px] font-bold text-muted/75">
+                  {percent((slice.value / total) * 100)}٪ · {money(slice.value)}
                 </div>
               </div>
             ))}
