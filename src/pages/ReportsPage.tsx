@@ -385,13 +385,13 @@ function MonthlyBarChart({ rows }: { rows: { label: string; income: number; expe
         </div>
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-2xl bg-bg px-3 py-4">
-        <div className="flex h-52 min-w-[620px] items-end gap-3">
+      <div className="mt-4 overflow-hidden rounded-2xl bg-bg px-3 py-4">
+        <div className="grid h-52 items-end gap-2" style={{ gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))` }}>
           {rows.map((row) => {
             const incomeHeight = row.income > 0 ? Math.max(4, (row.income / max) * 150) : 2;
             const expenseHeight = row.expense > 0 ? Math.max(4, (row.expense / max) * 150) : 2;
             return (
-              <div key={row.label} className="flex min-w-10 flex-1 flex-col items-center justify-end gap-2">
+              <div key={row.label} className="flex min-w-0 flex-col items-center justify-end gap-2">
                 <div className="flex h-[150px] items-end gap-1.5">
                   <div
                     className="w-3 rounded-t-lg bg-navy-900"
@@ -404,7 +404,7 @@ function MonthlyBarChart({ rows }: { rows: { label: string; income: number; expe
                     title={`${row.label} هزینه ${money(row.expense)}`}
                   />
                 </div>
-                <div className="max-w-12 truncate text-[10px] font-bold text-muted">{row.label}</div>
+                <div className="max-w-full truncate text-[10px] font-bold text-muted">{row.label}</div>
               </div>
             );
           })}

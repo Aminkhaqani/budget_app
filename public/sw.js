@@ -1,4 +1,4 @@
-const CACHE_NAME = "budget-app-v9";
+const CACHE_NAME = "budget-app-v10";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
