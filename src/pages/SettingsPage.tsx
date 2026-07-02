@@ -305,6 +305,9 @@ function CategoryRow({
           <span className="block truncate text-[11px] text-muted">
             {category.popular ? "پرکاربرد" : "معمولی"} · {new Intl.NumberFormat("fa-IR").format(usage)} تراکنش · {money(totalAmount)}
           </span>
+          <span className="mt-1 inline-flex rounded-full bg-white px-2 py-0.5 text-[10px] font-extrabold text-navy-900 ring-1 ring-black/5">
+            مشاهده تراکنش‌ها
+          </span>
         </span>
       </button>
       <RowActions onEdit={onEdit} onDelete={onDelete} />

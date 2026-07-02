@@ -96,9 +96,9 @@ export default function ReportsPage() {
   );
 
   const monthlySeries = useMemo(() => {
-    const year = jalaliParts(todayISO()).year;
-    return jalaliMonthNames.map((label, index) => {
-      const bounds = jalaliMonthBounds(year, index + 1);
+    const todayParts = jalaliParts(todayISO());
+    return jalaliMonthNames.slice(0, todayParts.month).map((label, index) => {
+      const bounds = jalaliMonthBounds(todayParts.year, index + 1);
       const monthTxs = txs.filter((tx) => isBetweenISO(tx.date, bounds.start, bounds.end));
       return {
         label,
