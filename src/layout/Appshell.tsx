@@ -189,11 +189,12 @@ function BottomNav({ onAdd }: { onAdd: () => void }) {
           </button>
 
           <div className="relative overflow-hidden rounded-3xl bg-navy-900 px-3 py-2 shadow-lg ring-1 ring-black/10">
-            <span
-              aria-hidden="true"
-              className="absolute top-1.5 h-11 w-11 rounded-full bg-white shadow-sm transition-[right,transform] duration-300 ease-[cubic-bezier(.34,1.56,.64,1)]"
-              style={{ right: `calc(${activeIndex} * 20% + 10% - 1.375rem)` }}
-            />
+            <div aria-hidden="true" className="absolute inset-x-3 top-1.5 h-11">
+              <span
+                className="absolute h-11 w-11 rounded-full bg-white shadow-sm transition-[right,transform] duration-300 ease-[cubic-bezier(.34,1.56,.64,1)]"
+                style={{ right: `calc(${activeIndex} * 20% + 10% - 1.375rem)` }}
+              />
+            </div>
             <div className="relative z-10 grid grid-cols-5 items-center" dir="rtl">
               {NAV_ITEMS.map((item) => (
                 <NavItem key={item.to} to={item.to} label={item.label} icon={item.icon} />
@@ -290,6 +291,7 @@ function toPersianWordsToman(toman: number) {
 }
 
 export default function Appshell() {
+  const routeLocation = useLocation();
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -475,23 +477,25 @@ export default function Appshell() {
       <div className="p-3">
 </div>
       <div className="mx-auto min-h-dvh max-w-[420px] px-3 sm:px-4 pb-28">
-        <Outlet
-          context={{
-            txs,
-            categories,
-            accounts,
-            plannedItems,
-            openAdd,
-            openEdit,
-            deleteTx,
-            saveCategory,
-            deleteCategory,
-            saveAccount,
-            deleteAccount,
-            savePlannedItem,
-            deletePlannedItem,
-          }}
-        />
+        <div key={routeLocation.pathname} className="route-transition">
+          <Outlet
+            context={{
+              txs,
+              categories,
+              accounts,
+              plannedItems,
+              openAdd,
+              openEdit,
+              deleteTx,
+              saveCategory,
+              deleteCategory,
+              saveAccount,
+              deleteAccount,
+              savePlannedItem,
+              deletePlannedItem,
+            }}
+          />
+        </div>
       </div>
 
       <BottomNav onAdd={openAdd} />

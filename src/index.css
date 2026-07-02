@@ -42,4 +42,26 @@
   .text-muted  { color: var(--muted); }
   .text-transfer { color: var(--transfer); }
   .bg-app      { background-color: var(--bg); }
+
+  .route-transition {
+    animation: route-in 180ms cubic-bezier(.2,.8,.2,1);
+    will-change: opacity, transform;
+  }
+}
+
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(.995);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-transition {
+    animation: none;
+  }
 }
