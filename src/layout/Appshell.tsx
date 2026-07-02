@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -93,8 +93,18 @@ export type PlannedItem = {
   note?: string;
 };
 
-function NavIcon({ name, active }: { name: "home" | "tx" | "finance" | "reports" | "settings"; active?: boolean }) {
-  const common = `w-5 h-5 ${active ? "text-white" : "text-white/70"}`;
+const NAV_ITEMS = [
+  { to: "/", label: "خانه", icon: "home" },
+  { to: "/transactions", label: "تراکنش‌ها", icon: "tx" },
+  { to: "/finance", label: "مدیریت", icon: "finance" },
+  { to: "/reports", label: "گزارش", icon: "reports" },
+  { to: "/settings", label: "تنظیمات", icon: "settings" },
+] as const;
+
+type NavIconName = (typeof NAV_ITEMS)[number]["icon"];
+
+function NavIcon({ name, active }: { name: NavIconName; active?: boolean }) {
+  const common = `h-5 w-5 transition-colors duration-300 ${active ? "text-orange" : "text-white/65"}`;
   if (name === "home")
     return (
       <svg viewBox="0 0 24 24" className={common}>
@@ -133,24 +143,66 @@ function NavItem({
 }: {
   to: string;
   label: string;
-  icon: "home" | "tx" | "finance" | "reports" | "settings";
+  icon: NavIconName;
 }) {
   return (
     <NavLink
       to={to}
       className={({ isActive }) =>
-  `flex flex-col items-center gap-1 text-[11px] ${isActive ? "text-orange" : "text-white/70"}`
+        `relative flex h-16 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl text-[10px] transition-colors duration-300 ${
+          isActive ? "text-orange" : "text-white/65"
+        }`
 }
     >
       {({ isActive }) => (
         <>
-                <span className={`px-2.5 py-1.5 rounded-2xl ${isActive ? "bg-orange-soft" : ""}`}>
+          <span className={`relative z-10 grid h-11 w-11 place-items-center rounded-full transition-transform duration-300 ${isActive ? "-translate-y-0.5" : ""}`}>
             <NavIcon name={icon} active={isActive} />
           </span>
-          <span className={`${isActive ? "font-extrabold" : "font-semibold"}`}>{label}</span>
+          <span className={`relative z-10 max-w-full truncate px-0.5 ${isActive ? "font-extrabold" : "font-semibold"}`}>{label}</span>
         </>
       )}
     </NavLink>
+  );
+}
+
+function activeNavIndex(pathname: string) {
+  const index = NAV_ITEMS.findIndex((item) => item.to === "/" ? pathname === "/" : pathname.startsWith(item.to));
+  return index >= 0 ? index : 0;
+}
+
+function BottomNav({ onAdd }: { onAdd: () => void }) {
+  const { pathname } = useLocation();
+  const activeIndex = activeNavIndex(pathname);
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-40">
+      <div className="pointer-events-none mx-auto max-w-[420px] px-3 pb-4 sm:px-4">
+        <div className="relative pointer-events-auto">
+          <button
+            onClick={onAdd}
+            className="absolute -top-16 right-6 z-20 grid h-14 w-14 place-items-center rounded-2xl bg-orange text-white shadow-2xl ring-1 ring-black/10 transition-transform duration-200 active:scale-95"
+            aria-label="افزودن تراکنش"
+            title="افزودن تراکنش"
+          >
+            <span className="text-3xl leading-none">+</span>
+          </button>
+
+          <div className="relative overflow-hidden rounded-3xl bg-navy-900 px-3 py-2 shadow-lg ring-1 ring-black/10">
+            <span
+              aria-hidden="true"
+              className="absolute top-1.5 h-11 w-11 rounded-full bg-white shadow-sm transition-[right,transform] duration-300 ease-[cubic-bezier(.34,1.56,.64,1)]"
+              style={{ right: `calc(${activeIndex} * 20% + 10% - 1.375rem)` }}
+            />
+            <div className="relative z-10 grid grid-cols-5 items-center" dir="rtl">
+              {NAV_ITEMS.map((item) => (
+                <NavItem key={item.to} to={item.to} label={item.label} icon={item.icon} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -442,31 +494,7 @@ export default function Appshell() {
         />
       </div>
 
-      {/* Bottom bar + center FAB */}
-      <div className="fixed bottom-0 left-0 right-0">
-        <div className="mx-auto max-w-[420px] px-3 sm:px-4">
-          <div className="relative mb-4">
-            <div className="rounded-3xl bg-navy-900 shadow-lg ring-1 ring-black/10 px-4 py-3">
-              <div className="grid grid-cols-6 items-center text-[10px]">
-                <NavItem to="/" label="خانه" icon="home" />
-                <NavItem to="/transactions" label="تراکنش‌ها" icon="tx" />
-                <NavItem to="/finance" label="مدیریت" icon="finance" />
-                <div />
-                <NavItem to="/reports" label="گزارش" icon="reports" />
-                <NavItem to="/settings" label="تنظیمات" icon="settings" />
-              </div>
-            </div>
-
-            <button
-              onClick={openAdd}
-              className="absolute left-1/2 -top-6 -translate-x-1/2 h-14 w-14 rounded-2xl bg-orange text-white shadow-2xl ring-1 ring-black/10 active:scale-95 grid place-items-center"              aria-label="افزودن تراکنش"
-              title="افزودن تراکنش"
-            >
-              <span className="text-3xl leading-none">+</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <BottomNav onAdd={openAdd} />
 
       {addOpen && (
         <AddTransactionModal
