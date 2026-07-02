@@ -13,7 +13,7 @@ import {
   shortJalali,
   todayISO,
 } from "../lib/date";
-import { initialAccounts, initialCategories, initialPlannedItems, initialTransactions } from "../data/initialData";
+import { initialAccounts, initialCategories, initialLoanInstallments, initialLoans, initialPlannedItems, initialTransactions } from "../data/initialData";
 import {
   deleteRemoteAccount,
   deleteRemoteCategory,
@@ -22,9 +22,13 @@ import {
   saveRemoteCategory,
   saveRemotePlannedItem,
   saveRemoteTx,
+  saveRemoteLoan,
+  saveRemoteLoanInstallment,
   subscribeBudgetChanges,
   syncBudgetData,
   deleteRemotePlannedItem,
+  deleteRemoteLoan,
+  deleteRemoteLoanInstallment,
 } from "../lib/budgetStore";
 import { AccountModal, CategoryModal } from "../pages/SettingsPage";
 
@@ -33,6 +37,8 @@ const STORAGE_KEYS = {
   categories: "budget-app:categories:v1",
   accounts: "budget-app:accounts:v1",
   plannedItems: "budget-app:planned-items:v1",
+  loans: "budget-app:loans:v1",
+  loanInstallments: "budget-app:loan-installments:v1",
 };
 
 const newCategoryDraft = (type: "income" | "expense"): Category => ({
@@ -93,6 +99,28 @@ export type PlannedItem = {
   note?: string;
 };
 
+export type Loan = {
+  id: string;
+  title: string;
+  lender?: string;
+  principalToman: number;
+  receivedDate: string;
+  active: boolean;
+  note?: string;
+};
+
+export type LoanInstallment = {
+  id: string;
+  loanId: string;
+  dueDate: string;
+  amountToman: number;
+  paid: boolean;
+  paidAmountToman?: number;
+  paidDate?: string;
+  transactionId?: string;
+  note?: string;
+};
+
 const NAV_ITEMS = [
   { to: "/", label: "خانه", icon: "home" },
   { to: "/transactions", label: "تراکنش‌ها", icon: "tx" },
@@ -101,10 +129,16 @@ const NAV_ITEMS = [
   { to: "/settings", label: "تنظیمات", icon: "settings" },
 ] as const;
 
+const DESKTOP_NAV_ITEMS = [
+  ...NAV_ITEMS,
+  { to: "/loans", label: "تسهیلات", icon: "finance" },
+] as const;
+
 type NavIconName = (typeof NAV_ITEMS)[number]["icon"];
 
-function NavIcon({ name, active }: { name: NavIconName; active?: boolean }) {
-  const common = `h-5 w-5 transition-colors duration-300 ${active ? "text-orange" : "text-white/65"}`;
+function NavIcon({ name, active, mode = "dark" }: { name: NavIconName; active?: boolean; mode?: "dark" | "light" }) {
+  const inactive = mode === "light" ? "text-navy-900/65" : "text-white/65";
+  const common = `h-5 w-5 transition-colors duration-300 ${active ? "text-orange" : inactive}`;
   if (name === "home")
     return (
       <svg viewBox="0 0 24 24" className={common}>
@@ -167,6 +201,7 @@ function NavItem({
 }
 
 function activeNavIndex(pathname: string) {
+  if (pathname.startsWith("/loans")) return 2;
   const index = NAV_ITEMS.findIndex((item) => item.to === "/" ? pathname === "/" : pathname.startsWith(item.to));
   return index >= 0 ? index : 0;
 }
@@ -204,6 +239,43 @@ function BottomNav({ onAdd }: { onAdd: () => void }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function DesktopSidebar({ onAdd }: { onAdd: () => void }) {
+  return (
+    <aside className="fixed bottom-0 right-0 top-0 z-40 hidden w-64 border-l border-black/5 bg-white px-4 py-6 shadow-sm lg:block">
+      <div className="text-lg font-extrabold text-ink">Budget</div>
+      <div className="mt-1 text-xs text-muted">مدیریت مالی شخصی</div>
+      <button
+        onClick={onAdd}
+        className="mt-6 w-full rounded-2xl bg-orange px-4 py-3 text-sm font-extrabold text-white shadow-sm active:bg-orange/90"
+      >
+        + تراکنش جدید
+      </button>
+      <nav className="mt-6 space-y-1">
+        {DESKTOP_NAV_ITEMS.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={({ isActive }) =>
+              `flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-extrabold transition-colors ${
+                isActive ? "bg-navy-900 text-white" : "text-muted hover:bg-bg hover:text-ink"
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <span className={`grid h-9 w-9 place-items-center rounded-xl ${isActive ? "bg-white/10" : "bg-bg"}`}>
+                  <NavIcon name={item.icon} active={isActive} mode="light" />
+                </span>
+                <span>{item.label}</span>
+              </>
+            )}
+          </NavLink>
+        ))}
+      </nav>
+    </aside>
   );
 }
 
@@ -305,6 +377,10 @@ export default function Appshell() {
   const [plannedItems, setPlannedItems] = useState<PlannedItem[]>(() =>
     loadStoredArray<PlannedItem>(STORAGE_KEYS.plannedItems, initialPlannedItems)
   );
+  const [loans, setLoans] = useState<Loan[]>(() => loadStoredArray<Loan>(STORAGE_KEYS.loans, initialLoans));
+  const [loanInstallments, setLoanInstallments] = useState<LoanInstallment[]>(() =>
+    loadStoredArray<LoanInstallment>(STORAGE_KEYS.loanInstallments, initialLoanInstallments)
+  );
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.txs, JSON.stringify(txs));
@@ -322,12 +398,22 @@ export default function Appshell() {
     localStorage.setItem(STORAGE_KEYS.plannedItems, JSON.stringify(plannedItems));
   }, [plannedItems]);
 
-  const applyRemoteData = useCallback((remote: { txs: Tx[]; categories: Category[]; accounts: Account[]; plannedItems: PlannedItem[] } | null) => {
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.loans, JSON.stringify(loans));
+  }, [loans]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.loanInstallments, JSON.stringify(loanInstallments));
+  }, [loanInstallments]);
+
+  const applyRemoteData = useCallback((remote: { txs: Tx[]; categories: Category[]; accounts: Account[]; plannedItems: PlannedItem[]; loans: Loan[]; loanInstallments: LoanInstallment[] } | null) => {
     if (!remote) return;
     setCategories(remote.categories);
     setAccounts(remote.accounts);
     setTxs(sortTxs(remote.txs));
     setPlannedItems(remote.plannedItems);
+    setLoans(remote.loans);
+    setLoanInstallments(remote.loanInstallments);
   }, []);
 
   useEffect(() => {
@@ -472,11 +558,46 @@ export default function Appshell() {
     void deleteRemotePlannedItem(id);
   };
 
+  const saveLoan = (loan: Loan) => {
+    setLoans((prev) => {
+      const exists = prev.some((current) => current.id === loan.id);
+      return exists ? prev.map((current) => (current.id === loan.id ? loan : current)) : [...prev, loan];
+    });
+    void saveRemoteLoan(loan);
+  };
+
+  const deleteLoan = (id: string) => {
+    setLoans((prev) => prev.filter((loan) => loan.id !== id));
+    setLoanInstallments((prev) => prev.filter((installment) => installment.loanId !== id));
+    void deleteRemoteLoan(id);
+  };
+
+  const saveLoanInstallment = (installment: LoanInstallment) => {
+    setLoanInstallments((prev) => {
+      const exists = prev.some((current) => current.id === installment.id);
+      return exists ? prev.map((current) => (current.id === installment.id ? installment : current)) : [...prev, installment];
+    });
+    void saveRemoteLoanInstallment(installment);
+  };
+
+  const saveLoanWithInstallments = (loan: Loan, installments: LoanInstallment[]) => {
+    saveLoan(loan);
+    setLoanInstallments((prev) => {
+      const others = prev.filter((item) => item.loanId !== loan.id);
+      return [...others, ...installments];
+    });
+    installments.forEach((installment) => void saveRemoteLoanInstallment(installment));
+  };
+
+  const deleteLoanInstallment = (id: string) => {
+    setLoanInstallments((prev) => prev.filter((item) => item.id !== id));
+    void deleteRemoteLoanInstallment(id);
+  };
+
   return (
     <div className="min-h-dvh bg-bg text-ink">
-      <div className="p-3">
-</div>
-      <div className="mx-auto min-h-dvh max-w-[420px] px-3 sm:px-4 pb-28">
+      <DesktopSidebar onAdd={openAdd} />
+      <div className="mx-auto min-h-dvh max-w-[420px] px-3 pb-28 sm:px-4 lg:mr-64 lg:max-w-6xl lg:px-8 lg:pb-8 lg:pt-6">
         <div key={routeLocation.pathname} className="route-transition">
           <Outlet
             context={{
@@ -484,6 +605,8 @@ export default function Appshell() {
               categories,
               accounts,
               plannedItems,
+              loans,
+              loanInstallments,
               openAdd,
               openEdit,
               deleteTx,
@@ -493,12 +616,19 @@ export default function Appshell() {
               deleteAccount,
               savePlannedItem,
               deletePlannedItem,
+              saveLoan,
+              deleteLoan,
+              saveLoanInstallment,
+              saveLoanWithInstallments,
+              deleteLoanInstallment,
             }}
           />
         </div>
       </div>
 
-      <BottomNav onAdd={openAdd} />
+      <div className="lg:hidden">
+        <BottomNav onAdd={openAdd} />
+      </div>
 
       {addOpen && (
         <AddTransactionModal

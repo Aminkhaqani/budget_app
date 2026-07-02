@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Account, Category, PlannedItem, Tx } from "../layout/Appshell";
+import type { Account, Category, Loan, LoanInstallment, PlannedItem, Tx } from "../layout/Appshell";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://pgerefjmnybgsnbphrnh.supabase.co";
 const supabaseKey =
@@ -46,6 +46,28 @@ type PlannedItemRow = {
   note: string | null;
 };
 
+type LoanRow = {
+  id: string;
+  title: string;
+  lender: string | null;
+  principal_toman: number;
+  received_date: string;
+  active: boolean;
+  note: string | null;
+};
+
+type LoanInstallmentRow = {
+  id: string;
+  loan_id: string;
+  due_date: string;
+  amount_toman: number;
+  paid: boolean;
+  paid_amount_toman: number | null;
+  paid_date: string | null;
+  transaction_id: string | null;
+  note: string | null;
+};
+
 type RemoteOperation =
   | { id: string; type: "saveTx"; tx: Tx }
   | { id: string; type: "deleteTx"; txId: string }
@@ -54,7 +76,11 @@ type RemoteOperation =
   | { id: string; type: "saveAccount"; account: Account }
   | { id: string; type: "deleteAccount"; accountId: string }
   | { id: string; type: "savePlannedItem"; plannedItem: PlannedItem }
-  | { id: string; type: "deletePlannedItem"; plannedItemId: string };
+  | { id: string; type: "deletePlannedItem"; plannedItemId: string }
+  | { id: string; type: "saveLoan"; loan: Loan }
+  | { id: string; type: "deleteLoan"; loanId: string }
+  | { id: string; type: "saveLoanInstallment"; loanInstallment: LoanInstallment }
+  | { id: string; type: "deleteLoanInstallment"; loanInstallmentId: string };
 
 type QueuedOperation =
   | { type: "saveTx"; tx: Tx }
@@ -64,7 +90,11 @@ type QueuedOperation =
   | { type: "saveAccount"; account: Account }
   | { type: "deleteAccount"; accountId: string }
   | { type: "savePlannedItem"; plannedItem: PlannedItem }
-  | { type: "deletePlannedItem"; plannedItemId: string };
+  | { type: "deletePlannedItem"; plannedItemId: string }
+  | { type: "saveLoan"; loan: Loan }
+  | { type: "deleteLoan"; loanId: string }
+  | { type: "saveLoanInstallment"; loanInstallment: LoanInstallment }
+  | { type: "deleteLoanInstallment"; loanInstallmentId: string };
 
 function warnRemote(error: unknown) {
   console.warn("Budget remote sync failed", error);
@@ -169,6 +199,50 @@ const fromPlannedItemRow = (row: PlannedItemRow): PlannedItem => ({
   note: row.note ?? undefined,
 });
 
+const toLoanRow = (loan: Loan): LoanRow => ({
+  id: loan.id,
+  title: loan.title,
+  lender: loan.lender ?? null,
+  principal_toman: loan.principalToman,
+  received_date: loan.receivedDate,
+  active: loan.active,
+  note: loan.note ?? null,
+});
+
+const fromLoanRow = (row: LoanRow): Loan => ({
+  id: row.id,
+  title: row.title,
+  lender: row.lender ?? undefined,
+  principalToman: row.principal_toman,
+  receivedDate: row.received_date,
+  active: row.active,
+  note: row.note ?? undefined,
+});
+
+const toLoanInstallmentRow = (loanInstallment: LoanInstallment): LoanInstallmentRow => ({
+  id: loanInstallment.id,
+  loan_id: loanInstallment.loanId,
+  due_date: loanInstallment.dueDate,
+  amount_toman: loanInstallment.amountToman,
+  paid: loanInstallment.paid,
+  paid_amount_toman: loanInstallment.paidAmountToman ?? null,
+  paid_date: loanInstallment.paidDate ?? null,
+  transaction_id: loanInstallment.transactionId ?? null,
+  note: loanInstallment.note ?? null,
+});
+
+const fromLoanInstallmentRow = (row: LoanInstallmentRow): LoanInstallment => ({
+  id: row.id,
+  loanId: row.loan_id,
+  dueDate: row.due_date,
+  amountToman: row.amount_toman,
+  paid: row.paid,
+  paidAmountToman: row.paid_amount_toman ?? undefined,
+  paidDate: row.paid_date ?? undefined,
+  transactionId: row.transaction_id ?? undefined,
+  note: row.note ?? undefined,
+});
+
 async function runOperation(operation: RemoteOperation) {
   if (!supabase) throw new Error("Supabase is not configured");
 
@@ -216,6 +290,26 @@ async function runOperation(operation: RemoteOperation) {
     const { error } = await supabase.from("planned_items").delete().eq("id", operation.plannedItemId);
     if (error) throw error;
   }
+
+  if (operation.type === "saveLoan") {
+    const { error } = await supabase.from("loans").upsert(toLoanRow(operation.loan));
+    if (error) throw error;
+  }
+
+  if (operation.type === "deleteLoan") {
+    const { error } = await supabase.from("loans").delete().eq("id", operation.loanId);
+    if (error) throw error;
+  }
+
+  if (operation.type === "saveLoanInstallment") {
+    const { error } = await supabase.from("loan_installments").upsert(toLoanInstallmentRow(operation.loanInstallment));
+    if (error) throw error;
+  }
+
+  if (operation.type === "deleteLoanInstallment") {
+    const { error } = await supabase.from("loan_installments").delete().eq("id", operation.loanInstallmentId);
+    if (error) throw error;
+  }
 }
 
 export async function flushQueuedBudgetOperations() {
@@ -242,7 +336,7 @@ export async function syncBudgetData() {
   try {
     await flushQueuedBudgetOperations();
 
-    const [categoriesResult, accountsResult, txsResult, plannedItemsResult] = await Promise.all([
+    const [categoriesResult, accountsResult, txsResult, plannedItemsResult, loansResult, loanInstallmentsResult] = await Promise.all([
       supabase.from("categories").select("id,type,title,icon,popular").order("type").order("title"),
       supabase.from("accounts").select("id,title,opening_balance_toman").order("title"),
       supabase
@@ -255,18 +349,30 @@ export async function syncBudgetData() {
         .select("id,title,type,amount_toman,day_of_month,active,category_id,account_id,note")
         .order("type")
         .order("day_of_month"),
+      supabase
+        .from("loans")
+        .select("id,title,lender,principal_toman,received_date,active,note")
+        .order("received_date", { ascending: false }),
+      supabase
+        .from("loan_installments")
+        .select("id,loan_id,due_date,amount_toman,paid,paid_amount_toman,paid_date,transaction_id,note")
+        .order("due_date"),
     ]);
 
     if (categoriesResult.error) throw categoriesResult.error;
     if (accountsResult.error) throw accountsResult.error;
     if (txsResult.error) throw txsResult.error;
     if (plannedItemsResult.error) throw plannedItemsResult.error;
+    if (loansResult.error) throw loansResult.error;
+    if (loanInstallmentsResult.error) throw loanInstallmentsResult.error;
 
     return {
       categories: (categoriesResult.data ?? []).map((row) => fromCategoryRow(row as CategoryRow)),
       accounts: (accountsResult.data ?? []).map((row) => fromAccountRow(row as AccountRow)),
       txs: (txsResult.data ?? []).map((row) => fromTxRow(row as TxRow)),
       plannedItems: (plannedItemsResult.data ?? []).map((row) => fromPlannedItemRow(row as PlannedItemRow)),
+      loans: (loansResult.data ?? []).map((row) => fromLoanRow(row as LoanRow)),
+      loanInstallments: (loanInstallmentsResult.data ?? []).map((row) => fromLoanInstallmentRow(row as LoanInstallmentRow)),
     };
   } catch (error) {
     warnRemote(error);
@@ -283,6 +389,8 @@ export function subscribeBudgetChanges(onChange: () => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "categories" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounts" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "planned_items" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "loans" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "loan_installments" }, onChange)
     .subscribe((status) => {
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") warnRemote(`Realtime ${status}`);
     });
@@ -368,6 +476,46 @@ export async function deleteRemotePlannedItem(id: string) {
     await runOperation({ id: queueId(), type: "deletePlannedItem", plannedItemId: id });
   } catch (error) {
     enqueue({ type: "deletePlannedItem", plannedItemId: id });
+    warnRemote(error);
+  }
+}
+
+export async function saveRemoteLoan(loan: Loan) {
+  if (!supabase) return;
+  try {
+    await runOperation({ id: queueId(), type: "saveLoan", loan });
+  } catch (error) {
+    enqueue({ type: "saveLoan", loan });
+    warnRemote(error);
+  }
+}
+
+export async function deleteRemoteLoan(id: string) {
+  if (!supabase) return;
+  try {
+    await runOperation({ id: queueId(), type: "deleteLoan", loanId: id });
+  } catch (error) {
+    enqueue({ type: "deleteLoan", loanId: id });
+    warnRemote(error);
+  }
+}
+
+export async function saveRemoteLoanInstallment(loanInstallment: LoanInstallment) {
+  if (!supabase) return;
+  try {
+    await runOperation({ id: queueId(), type: "saveLoanInstallment", loanInstallment });
+  } catch (error) {
+    enqueue({ type: "saveLoanInstallment", loanInstallment });
+    warnRemote(error);
+  }
+}
+
+export async function deleteRemoteLoanInstallment(id: string) {
+  if (!supabase) return;
+  try {
+    await runOperation({ id: queueId(), type: "deleteLoanInstallment", loanInstallmentId: id });
+  } catch (error) {
+    enqueue({ type: "deleteLoanInstallment", loanInstallmentId: id });
     warnRemote(error);
   }
 }

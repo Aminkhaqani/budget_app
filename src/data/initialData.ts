@@ -1,4 +1,4 @@
-import type { Account, Category, PlannedItem, Tx } from "../layout/Appshell";
+import type { Account, Category, Loan, LoanInstallment, PlannedItem, Tx } from "../layout/Appshell";
 
 export const initialCategories: Category[] = [
   { id: "c_inc_salary", type: "income", title: "حقوق", icon: "💼", popular: true },
@@ -75,6 +75,9 @@ export const initialPlannedItems: PlannedItem[] = [
     categoryId: "c_exp_groceries",
   },
 ];
+
+export const initialLoans: Loan[] = [];
+export const initialLoanInstallments: LoanInstallment[] = [];
 
 export const initialTransactions: Tx[] = [
   { id: "tx_001", type: "income", amountToman: 38000000, date: "2026-06-02", categoryId: "c_inc_salary", note: "دریافت حقوق اردیبهشت تاپین" },

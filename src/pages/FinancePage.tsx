@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { NavLink, useOutletContext } from "react-router-dom";
 import type { Account, Category, PlannedItem, Tx } from "../layout/Appshell";
 import {
   findGregorianForJalali,
@@ -177,8 +177,13 @@ export default function FinancePage() {
             <div className="text-sm font-semibold">مدیریت مالی</div>
             <div className="mt-1 text-[11px] text-muted">از امروز تا پایان ماه شمسی</div>
           </div>
-          <div className="rounded-2xl bg-white px-3 py-2 text-left text-xs font-extrabold text-ink shadow-sm ring-1 ring-black/5">
-            {jalaliISODate(today)}
+          <div className="flex items-center gap-2">
+            <NavLink to="/loans" className="rounded-2xl bg-navy-900 px-3 py-2 text-xs font-extrabold text-white shadow-sm">
+              تسهیلات
+            </NavLink>
+            <div className="rounded-2xl bg-white px-3 py-2 text-left text-xs font-extrabold text-ink shadow-sm ring-1 ring-black/5">
+              {jalaliISODate(today)}
+            </div>
           </div>
         </div>
       </div>
