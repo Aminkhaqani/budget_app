@@ -1,4 +1,4 @@
-import type { Account, Category, Tx } from "../layout/Appshell";
+import type { Account, Category, PlannedItem, Tx } from "../layout/Appshell";
 
 export const initialCategories: Category[] = [
   { id: "c_inc_salary", type: "income", title: "حقوق", icon: "💼", popular: true },
@@ -26,6 +26,54 @@ export const initialAccounts: Account[] = [
   { id: "a_main", title: "حساب اصلی" },
   { id: "a_cash", title: "نقدی" },
   { id: "a_bank", title: "کارت بانکی" },
+];
+
+export const initialPlannedItems: PlannedItem[] = [
+  {
+    id: "plan_salary",
+    title: "حقوق ماهانه",
+    type: "income",
+    amountToman: 38000000,
+    dayOfMonth: 1,
+    active: true,
+    categoryId: "c_inc_salary",
+  },
+  {
+    id: "plan_installment_motor",
+    title: "قسط موتور",
+    type: "must",
+    amountToman: 30000000,
+    dayOfMonth: 5,
+    active: true,
+    categoryId: "c_exp_installment",
+  },
+  {
+    id: "plan_installment_robot",
+    title: "قسط جارورباتیک",
+    type: "must",
+    amountToman: 4700000,
+    dayOfMonth: 17,
+    active: true,
+    categoryId: "c_exp_installment",
+  },
+  {
+    id: "plan_bills",
+    title: "قبض و اینترنت",
+    type: "must",
+    amountToman: 1500000,
+    dayOfMonth: 10,
+    active: true,
+    categoryId: "c_exp_bills",
+  },
+  {
+    id: "plan_home_spending",
+    title: "خرج حدودی خانه",
+    type: "flex",
+    amountToman: 9000000,
+    dayOfMonth: 20,
+    active: true,
+    categoryId: "c_exp_groceries",
+  },
 ];
 
 export const initialTransactions: Tx[] = [

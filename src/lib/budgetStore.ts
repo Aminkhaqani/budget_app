@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Account, Category, Tx } from "../layout/Appshell";
+import type { Account, Category, PlannedItem, Tx } from "../layout/Appshell";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://pgerefjmnybgsnbphrnh.supabase.co";
 const supabaseKey =
@@ -34,13 +34,27 @@ type TxRow = {
   note: string | null;
 };
 
+type PlannedItemRow = {
+  id: string;
+  title: string;
+  type: "income" | "must" | "flex";
+  amount_toman: number;
+  day_of_month: number;
+  active: boolean;
+  category_id: string | null;
+  account_id: string | null;
+  note: string | null;
+};
+
 type RemoteOperation =
   | { id: string; type: "saveTx"; tx: Tx }
   | { id: string; type: "deleteTx"; txId: string }
   | { id: string; type: "saveCategory"; category: Category }
   | { id: string; type: "deleteCategory"; categoryId: string; targetCategoryId?: string }
   | { id: string; type: "saveAccount"; account: Account }
-  | { id: string; type: "deleteAccount"; accountId: string };
+  | { id: string; type: "deleteAccount"; accountId: string }
+  | { id: string; type: "savePlannedItem"; plannedItem: PlannedItem }
+  | { id: string; type: "deletePlannedItem"; plannedItemId: string };
 
 type QueuedOperation =
   | { type: "saveTx"; tx: Tx }
@@ -48,7 +62,9 @@ type QueuedOperation =
   | { type: "saveCategory"; category: Category }
   | { type: "deleteCategory"; categoryId: string; targetCategoryId?: string }
   | { type: "saveAccount"; account: Account }
-  | { type: "deleteAccount"; accountId: string };
+  | { type: "deleteAccount"; accountId: string }
+  | { type: "savePlannedItem"; plannedItem: PlannedItem }
+  | { type: "deletePlannedItem"; plannedItemId: string };
 
 function warnRemote(error: unknown) {
   console.warn("Budget remote sync failed", error);
@@ -129,6 +145,30 @@ const fromTxRow = (row: TxRow): Tx => ({
   note: row.note ?? undefined,
 });
 
+const toPlannedItemRow = (plannedItem: PlannedItem): PlannedItemRow => ({
+  id: plannedItem.id,
+  title: plannedItem.title,
+  type: plannedItem.type,
+  amount_toman: plannedItem.amountToman,
+  day_of_month: plannedItem.dayOfMonth,
+  active: plannedItem.active,
+  category_id: plannedItem.categoryId ?? null,
+  account_id: plannedItem.accountId ?? null,
+  note: plannedItem.note ?? null,
+});
+
+const fromPlannedItemRow = (row: PlannedItemRow): PlannedItem => ({
+  id: row.id,
+  title: row.title,
+  type: row.type,
+  amountToman: row.amount_toman,
+  dayOfMonth: row.day_of_month,
+  active: row.active,
+  categoryId: row.category_id ?? undefined,
+  accountId: row.account_id ?? undefined,
+  note: row.note ?? undefined,
+});
+
 async function runOperation(operation: RemoteOperation) {
   if (!supabase) throw new Error("Supabase is not configured");
 
@@ -166,6 +206,16 @@ async function runOperation(operation: RemoteOperation) {
     const { error } = await supabase.from("accounts").delete().eq("id", operation.accountId);
     if (error) throw error;
   }
+
+  if (operation.type === "savePlannedItem") {
+    const { error } = await supabase.from("planned_items").upsert(toPlannedItemRow(operation.plannedItem));
+    if (error) throw error;
+  }
+
+  if (operation.type === "deletePlannedItem") {
+    const { error } = await supabase.from("planned_items").delete().eq("id", operation.plannedItemId);
+    if (error) throw error;
+  }
 }
 
 export async function flushQueuedBudgetOperations() {
@@ -192,7 +242,7 @@ export async function syncBudgetData() {
   try {
     await flushQueuedBudgetOperations();
 
-    const [categoriesResult, accountsResult, txsResult] = await Promise.all([
+    const [categoriesResult, accountsResult, txsResult, plannedItemsResult] = await Promise.all([
       supabase.from("categories").select("id,type,title,icon,popular").order("type").order("title"),
       supabase.from("accounts").select("id,title,opening_balance_toman").order("title"),
       supabase
@@ -200,16 +250,23 @@ export async function syncBudgetData() {
         .select("id,type,amount_toman,date,created_at,category_id,from_account_id,to_account_id,note")
         .order("date", { ascending: false })
         .order("created_at", { ascending: false }),
+      supabase
+        .from("planned_items")
+        .select("id,title,type,amount_toman,day_of_month,active,category_id,account_id,note")
+        .order("type")
+        .order("day_of_month"),
     ]);
 
     if (categoriesResult.error) throw categoriesResult.error;
     if (accountsResult.error) throw accountsResult.error;
     if (txsResult.error) throw txsResult.error;
+    if (plannedItemsResult.error) throw plannedItemsResult.error;
 
     return {
       categories: (categoriesResult.data ?? []).map((row) => fromCategoryRow(row as CategoryRow)),
       accounts: (accountsResult.data ?? []).map((row) => fromAccountRow(row as AccountRow)),
       txs: (txsResult.data ?? []).map((row) => fromTxRow(row as TxRow)),
+      plannedItems: (plannedItemsResult.data ?? []).map((row) => fromPlannedItemRow(row as PlannedItemRow)),
     };
   } catch (error) {
     warnRemote(error);
@@ -225,6 +282,7 @@ export function subscribeBudgetChanges(onChange: () => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "categories" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounts" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "planned_items" }, onChange)
     .subscribe((status) => {
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") warnRemote(`Realtime ${status}`);
     });
@@ -290,6 +348,26 @@ export async function deleteRemoteAccount(id: string) {
     await runOperation({ id: queueId(), type: "deleteAccount", accountId: id });
   } catch (error) {
     enqueue({ type: "deleteAccount", accountId: id });
+    warnRemote(error);
+  }
+}
+
+export async function saveRemotePlannedItem(plannedItem: PlannedItem) {
+  if (!supabase) return;
+  try {
+    await runOperation({ id: queueId(), type: "savePlannedItem", plannedItem });
+  } catch (error) {
+    enqueue({ type: "savePlannedItem", plannedItem });
+    warnRemote(error);
+  }
+}
+
+export async function deleteRemotePlannedItem(id: string) {
+  if (!supabase) return;
+  try {
+    await runOperation({ id: queueId(), type: "deletePlannedItem", plannedItemId: id });
+  } catch (error) {
+    enqueue({ type: "deletePlannedItem", plannedItemId: id });
     warnRemote(error);
   }
 }

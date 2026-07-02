@@ -13,16 +13,18 @@ import {
   shortJalali,
   todayISO,
 } from "../lib/date";
-import { initialAccounts, initialCategories, initialTransactions } from "../data/initialData";
+import { initialAccounts, initialCategories, initialPlannedItems, initialTransactions } from "../data/initialData";
 import {
   deleteRemoteAccount,
   deleteRemoteCategory,
   deleteRemoteTx,
   saveRemoteAccount,
   saveRemoteCategory,
+  saveRemotePlannedItem,
   saveRemoteTx,
   subscribeBudgetChanges,
   syncBudgetData,
+  deleteRemotePlannedItem,
 } from "../lib/budgetStore";
 import { AccountModal, CategoryModal } from "../pages/SettingsPage";
 
@@ -30,6 +32,7 @@ const STORAGE_KEYS = {
   txs: "budget-app:txs:v1",
   categories: "budget-app:categories:v1",
   accounts: "budget-app:accounts:v1",
+  plannedItems: "budget-app:planned-items:v1",
 };
 
 const newCategoryDraft = (type: "income" | "expense"): Category => ({
@@ -78,7 +81,19 @@ export type Account = {
   openingBalanceToman?: number;
 };
 
-function NavIcon({ name, active }: { name: "home" | "tx" | "reports" | "settings"; active?: boolean }) {
+export type PlannedItem = {
+  id: string;
+  title: string;
+  type: "income" | "must" | "flex";
+  amountToman: number;
+  dayOfMonth: number;
+  active: boolean;
+  categoryId?: string;
+  accountId?: string;
+  note?: string;
+};
+
+function NavIcon({ name, active }: { name: "home" | "tx" | "finance" | "reports" | "settings"; active?: boolean }) {
   const common = `w-5 h-5 ${active ? "text-white" : "text-white/70"}`;
   if (name === "home")
     return (
@@ -98,6 +113,12 @@ function NavIcon({ name, active }: { name: "home" | "tx" | "reports" | "settings
         <path fill="currentColor" d="M11 2v20H9V2h2Zm4 8v12h-2V10h2Zm4 5v7h-2v-7h2ZM7 13v9H5v-9h2Z" />
       </svg>
     );
+  if (name === "finance")
+    return (
+      <svg viewBox="0 0 24 24" className={common}>
+        <path fill="currentColor" d="M4 4h16v4H4V4Zm0 6h7v10H4V10Zm9 0h7v4h-7v-4Zm0 6h7v4h-7v-4Z" />
+      </svg>
+    );
   return (
     <svg viewBox="0 0 24 24" className={common}>
       <path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.53-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.23.4.32.64.22l2.39-.96c.5.4 1.05.72 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.53 1.63-.94l2.39.96c.24.1.51.01.64-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z" />
@@ -112,7 +133,7 @@ function NavItem({
 }: {
   to: string;
   label: string;
-  icon: "home" | "tx" | "reports" | "settings";
+  icon: "home" | "tx" | "finance" | "reports" | "settings";
 }) {
   return (
     <NavLink
@@ -227,6 +248,9 @@ export default function Appshell() {
     loadStoredArray<Category>(STORAGE_KEYS.categories, initialCategories)
   );
   const [accounts, setAccounts] = useState<Account[]>(() => loadStoredArray<Account>(STORAGE_KEYS.accounts, initialAccounts));
+  const [plannedItems, setPlannedItems] = useState<PlannedItem[]>(() =>
+    loadStoredArray<PlannedItem>(STORAGE_KEYS.plannedItems, initialPlannedItems)
+  );
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.txs, JSON.stringify(txs));
@@ -240,11 +264,16 @@ export default function Appshell() {
     localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(accounts));
   }, [accounts]);
 
-  const applyRemoteData = useCallback((remote: { txs: Tx[]; categories: Category[]; accounts: Account[] } | null) => {
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.plannedItems, JSON.stringify(plannedItems));
+  }, [plannedItems]);
+
+  const applyRemoteData = useCallback((remote: { txs: Tx[]; categories: Category[]; accounts: Account[]; plannedItems: PlannedItem[] } | null) => {
     if (!remote) return;
     setCategories(remote.categories);
     setAccounts(remote.accounts);
     setTxs(sortTxs(remote.txs));
+    setPlannedItems(remote.plannedItems);
   }, []);
 
   useEffect(() => {
@@ -376,6 +405,19 @@ export default function Appshell() {
     void deleteRemoteAccount(id);
   };
 
+  const savePlannedItem = (item: PlannedItem) => {
+    setPlannedItems((prev) => {
+      const exists = prev.some((current) => current.id === item.id);
+      return exists ? prev.map((current) => (current.id === item.id ? item : current)) : [...prev, item];
+    });
+    void saveRemotePlannedItem(item);
+  };
+
+  const deletePlannedItem = (id: string) => {
+    setPlannedItems((prev) => prev.filter((item) => item.id !== id));
+    void deleteRemotePlannedItem(id);
+  };
+
   return (
     <div className="min-h-dvh bg-bg text-ink">
       <div className="p-3">
@@ -386,6 +428,7 @@ export default function Appshell() {
             txs,
             categories,
             accounts,
+            plannedItems,
             openAdd,
             openEdit,
             deleteTx,
@@ -393,6 +436,8 @@ export default function Appshell() {
             deleteCategory,
             saveAccount,
             deleteAccount,
+            savePlannedItem,
+            deletePlannedItem,
           }}
         />
       </div>
@@ -402,9 +447,10 @@ export default function Appshell() {
         <div className="mx-auto max-w-[420px] px-3 sm:px-4">
           <div className="relative mb-4">
             <div className="rounded-3xl bg-navy-900 shadow-lg ring-1 ring-black/10 px-4 py-3">
-              <div className="grid grid-cols-5 items-center text-xs">
+              <div className="grid grid-cols-6 items-center text-[10px]">
                 <NavItem to="/" label="خانه" icon="home" />
                 <NavItem to="/transactions" label="تراکنش‌ها" icon="tx" />
+                <NavItem to="/finance" label="مدیریت" icon="finance" />
                 <div />
                 <NavItem to="/reports" label="گزارش" icon="reports" />
                 <NavItem to="/settings" label="تنظیمات" icon="settings" />

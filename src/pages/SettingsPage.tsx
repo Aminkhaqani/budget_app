@@ -2,19 +2,22 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { useOutletContext } from "react-router-dom";
 import { normalizeDigits } from "../lib/date";
-import type { Account, Category, Tx } from "../layout/Appshell";
+import type { Account, Category, PlannedItem, Tx } from "../layout/Appshell";
 
 type Ctx = {
   txs: Tx[];
   categories: Category[];
   accounts: Account[];
+  plannedItems: PlannedItem[];
   saveCategory: (category: Category) => void;
   deleteCategory: (id: string, targetCategoryId?: string) => void;
   saveAccount: (account: Account) => void;
   deleteAccount: (id: string) => void;
+  savePlannedItem: (item: PlannedItem) => void;
+  deletePlannedItem: (id: string) => void;
 };
 
-type Tab = "categories" | "accounts";
+type Tab = "categories" | "accounts" | "plans";
 
 const emptyCategory = (): Category => ({
   id: "",
@@ -25,13 +28,33 @@ const emptyCategory = (): Category => ({
 });
 
 const emptyAccount = (): Account => ({ id: "", title: "", openingBalanceToman: 0 });
+const emptyPlannedItem = (): PlannedItem => ({
+  id: "",
+  title: "",
+  type: "must",
+  amountToman: 0,
+  dayOfMonth: 1,
+  active: true,
+});
 const parseAmount = (value: string) => Number(normalizeDigits(value).replace(/[^\d]/g, "")) || 0;
 
 export default function SettingsPage() {
-  const { txs, categories, accounts, saveCategory, deleteCategory, saveAccount, deleteAccount } = useOutletContext<Ctx>();
+  const {
+    txs,
+    categories,
+    accounts,
+    plannedItems,
+    saveCategory,
+    deleteCategory,
+    saveAccount,
+    deleteAccount,
+    savePlannedItem,
+    deletePlannedItem,
+  } = useOutletContext<Ctx>();
   const [tab, setTab] = useState<Tab>("categories");
   const [categoryDraft, setCategoryDraft] = useState<Category | null>(null);
   const [accountDraft, setAccountDraft] = useState<Account | null>(null);
+  const [plannedDraft, setPlannedDraft] = useState<PlannedItem | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<Category | null>(null);
 
   const categoryUsage = (categoryId: string) => txs.filter((tx) => tx.categoryId === categoryId).length;
@@ -60,6 +83,21 @@ export default function SettingsPage() {
     setAccountDraft(null);
   };
 
+  const submitPlannedItem = (item: PlannedItem) => {
+    const title = item.title.trim();
+    if (!title || item.amountToman <= 0) return;
+    savePlannedItem({
+      ...item,
+      id: item.id || `plan_${crypto.randomUUID()}`,
+      title,
+      dayOfMonth: Math.min(31, Math.max(1, Math.round(item.dayOfMonth || 1))),
+      categoryId: item.categoryId || undefined,
+      accountId: item.accountId || undefined,
+      note: item.note?.trim() || undefined,
+    });
+    setPlannedDraft(null);
+  };
+
   const requestDeleteCategory = (category: Category) => {
     if (categoryUsage(category.id) === 0) {
       setDeleteCandidate(category);
@@ -76,15 +114,20 @@ export default function SettingsPage() {
           <div className="rounded-2xl bg-white p-1 text-xs ring-1 ring-black/5">
             <Chip active={tab === "categories"} onClick={() => setTab("categories")}>دسته‌بندی‌ها</Chip>
             <Chip active={tab === "accounts"} onClick={() => setTab("accounts")}>حساب‌ها</Chip>
+            <Chip active={tab === "plans"} onClick={() => setTab("plans")}>برنامه‌ها</Chip>
           </div>
         </div>
       </div>
 
       <button
-        onClick={() => (tab === "categories" ? setCategoryDraft(emptyCategory()) : setAccountDraft(emptyAccount()))}
+        onClick={() => {
+          if (tab === "categories") setCategoryDraft(emptyCategory());
+          else if (tab === "accounts") setAccountDraft(emptyAccount());
+          else setPlannedDraft(emptyPlannedItem());
+        }}
         className="w-full rounded-2xl bg-navy-900 px-4 py-3 text-sm font-extrabold text-white shadow-sm active:bg-navy-700"
       >
-        {tab === "categories" ? "ایجاد دسته‌بندی جدید" : "ایجاد حساب جدید"}
+        {tab === "categories" ? "ایجاد دسته‌بندی جدید" : tab === "accounts" ? "ایجاد حساب جدید" : "ایجاد برنامه جدید"}
       </button>
 
       {tab === "categories" ? (
@@ -113,7 +156,7 @@ export default function SettingsPage() {
             ))}
           </Section>
         </>
-      ) : (
+      ) : tab === "accounts" ? (
         <Section title="حساب‌ها">
           {accounts.map((account) => (
             <AccountRow
@@ -125,6 +168,24 @@ export default function SettingsPage() {
               }}
             />
           ))}
+        </Section>
+      ) : (
+        <Section title="پرداخت‌ها و درآمدهای برنامه‌ای">
+          {plannedItems.length === 0 ? (
+            <div className="rounded-2xl bg-bg px-3 py-3 text-xs text-muted">هنوز برنامه‌ای تعریف نشده.</div>
+          ) : (
+            plannedItems.map((item) => (
+              <PlannedItemRow
+                key={item.id}
+                item={item}
+                categories={categories}
+                onEdit={() => setPlannedDraft(item)}
+                onDelete={() => {
+                  if (window.confirm("این برنامه حذف شود؟")) deletePlannedItem(item.id);
+                }}
+              />
+            ))
+          )}
         </Section>
       )}
 
@@ -143,6 +204,17 @@ export default function SettingsPage() {
           onChange={setAccountDraft}
           onClose={() => setAccountDraft(null)}
           onSubmit={() => submitAccount(accountDraft)}
+        />
+      )}
+
+      {plannedDraft && (
+        <PlannedItemModal
+          value={plannedDraft}
+          categories={categories}
+          accounts={accounts}
+          onChange={setPlannedDraft}
+          onClose={() => setPlannedDraft(null)}
+          onSubmit={() => submitPlannedItem(plannedDraft)}
         />
       )}
 
@@ -217,6 +289,53 @@ function AccountRow({ account, onEdit, onDelete }: { account: Account; onEdit: (
         <div className="text-[11px] text-muted">موجودی اولیه: {new Intl.NumberFormat("fa-IR").format(account.openingBalanceToman ?? 0)}</div>
       </div>
       <RowActions onEdit={onEdit} onDelete={onDelete} />
+    </div>
+  );
+}
+
+function plannedTypeLabel(type: PlannedItem["type"]) {
+  if (type === "income") return "درآمد ثابت";
+  if (type === "must") return "پرداخت قطعی";
+  return "خرج قابل کنترل";
+}
+
+function plannedTypeTone(type: PlannedItem["type"]) {
+  if (type === "income") return "text-emerald-700 bg-emerald-50";
+  if (type === "must") return "text-red-700 bg-red-50";
+  return "text-blue-700 bg-blue-50";
+}
+
+function PlannedItemRow({
+  item,
+  categories,
+  onEdit,
+  onDelete,
+}: {
+  item: PlannedItem;
+  categories: Category[];
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const category = item.categoryId ? categories.find((entry) => entry.id === item.categoryId) : undefined;
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl bg-bg px-3 py-2">
+      <div className="min-w-0">
+        <div className="truncate text-sm font-extrabold text-ink">{item.title}</div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-muted">
+          <span className={`rounded-full px-2 py-0.5 font-extrabold ${plannedTypeTone(item.type)}`}>
+            {plannedTypeLabel(item.type)}
+          </span>
+          <span>روز {new Intl.NumberFormat("fa-IR").format(item.dayOfMonth)} هر ماه</span>
+          {category && <span>· {category.title}</span>}
+          {!item.active && <span>· غیرفعال</span>}
+        </div>
+      </div>
+      <div className="shrink-0 text-left">
+        <div className="mb-1 text-xs font-extrabold text-ink">
+          {new Intl.NumberFormat("fa-IR").format(item.amountToman)}
+        </div>
+        <RowActions onEdit={onEdit} onDelete={onDelete} />
+      </div>
     </div>
   );
 }
@@ -346,6 +465,128 @@ export function AccountModal({
           placeholder="موجودی اولیه"
           className="w-full rounded-2xl bg-bg px-3 py-3 text-sm ring-1 ring-black/5 outline-none focus:ring-navy-900/20"
         />
+        <button onClick={onSubmit} className="w-full rounded-2xl bg-navy-900 px-4 py-3 text-sm font-extrabold text-white">
+          ذخیره
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function PlannedItemModal({
+  value,
+  categories,
+  accounts,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  value: PlannedItem;
+  categories: Category[];
+  accounts: Account[];
+  onChange: (value: PlannedItem) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  const [amountDraft, setAmountDraft] = useState(value.amountToman ? new Intl.NumberFormat("en-US").format(value.amountToman) : "");
+  const matchingCategories = categories.filter((category) =>
+    value.type === "income" ? category.type === "income" : category.type === "expense"
+  );
+
+  return (
+    <ModalShell onClose={onClose}>
+      <ModalHeader title={value.id ? "ویرایش برنامه" : "برنامه جدید"} onClose={onClose} />
+      <div className="space-y-3">
+        <input
+          value={value.title}
+          onChange={(event) => onChange({ ...value, title: event.target.value })}
+          placeholder="عنوان برنامه"
+          className="w-full rounded-2xl bg-bg px-3 py-3 text-sm ring-1 ring-black/5 outline-none focus:ring-navy-900/20"
+        />
+
+        <div className="grid grid-cols-3 gap-2 rounded-2xl bg-bg p-1 text-xs">
+          <Chip active={value.type === "income"} onClick={() => onChange({ ...value, type: "income", categoryId: "" })}>
+            درآمد
+          </Chip>
+          <Chip active={value.type === "must"} onClick={() => onChange({ ...value, type: "must", categoryId: "" })}>
+            قطعی
+          </Chip>
+          <Chip active={value.type === "flex"} onClick={() => onChange({ ...value, type: "flex", categoryId: "" })}>
+            قابل کنترل
+          </Chip>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block rounded-2xl bg-bg px-3 py-2">
+            <span className="text-[11px] text-muted">مبلغ</span>
+            <input
+              value={amountDraft}
+              onChange={(event) => {
+                const amount = parseAmount(event.target.value);
+                setAmountDraft(amount ? new Intl.NumberFormat("en-US").format(amount) : "");
+                onChange({ ...value, amountToman: amount });
+              }}
+              inputMode="numeric"
+              dir="ltr"
+              className="mt-1 w-full bg-transparent text-sm font-extrabold text-ink outline-none"
+            />
+          </label>
+
+          <label className="block rounded-2xl bg-bg px-3 py-2">
+            <span className="text-[11px] text-muted">روز ماه شمسی</span>
+            <input
+              value={value.dayOfMonth}
+              onChange={(event) => onChange({ ...value, dayOfMonth: parseAmount(event.target.value) })}
+              inputMode="numeric"
+              className="mt-1 w-full bg-transparent text-sm font-extrabold text-ink outline-none"
+            />
+          </label>
+        </div>
+
+        <select
+          value={value.categoryId ?? ""}
+          onChange={(event) => onChange({ ...value, categoryId: event.target.value })}
+          className="w-full rounded-2xl bg-bg px-3 py-3 text-sm font-bold text-ink ring-1 ring-black/5 outline-none"
+        >
+          <option value="">بدون دسته‌بندی</option>
+          {matchingCategories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.icon ? `${category.icon} ` : ""}
+              {category.title}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={value.accountId ?? ""}
+          onChange={(event) => onChange({ ...value, accountId: event.target.value })}
+          className="w-full rounded-2xl bg-bg px-3 py-3 text-sm font-bold text-ink ring-1 ring-black/5 outline-none"
+        >
+          <option value="">بدون حساب مشخص</option>
+          {accounts.map((account) => (
+            <option key={account.id} value={account.id}>
+              {account.title}
+            </option>
+          ))}
+        </select>
+
+        <input
+          value={value.note ?? ""}
+          onChange={(event) => onChange({ ...value, note: event.target.value })}
+          placeholder="توضیح اختیاری"
+          className="w-full rounded-2xl bg-bg px-3 py-3 text-sm ring-1 ring-black/5 outline-none focus:ring-navy-900/20"
+        />
+
+        <button
+          type="button"
+          onClick={() => onChange({ ...value, active: !value.active })}
+          className={`w-full rounded-2xl px-4 py-3 text-sm font-extrabold ${
+            value.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-muted"
+          }`}
+        >
+          {value.active ? "فعال است" : "غیرفعال است"}
+        </button>
+
         <button onClick={onSubmit} className="w-full rounded-2xl bg-navy-900 px-4 py-3 text-sm font-extrabold text-white">
           ذخیره
         </button>
