@@ -775,9 +775,9 @@ function AddTransactionModal({
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
-      <div className="absolute bottom-0 left-0 right-0">
-        <div className="mx-auto max-w-[420px] px-3 sm:px-4 pb-4">
-          <div className="flex max-h-[82vh] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl ring-1 ring-black/5">
+      <div className="absolute inset-x-0 bottom-3 top-3 lg:inset-0 lg:grid lg:place-items-center">
+        <div className="mx-auto flex h-full max-w-[420px] px-3 sm:px-4 lg:h-auto lg:w-[520px] lg:max-w-none">
+          <div className="flex max-h-full w-full flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 lg:max-h-[90vh]">
             <div className="shrink-0 px-4 py-3 border-b flex items-center justify-between">
               <div className="font-extrabold text-ink">
                 {initialTx ? "ویرایش تراکنش" : "ثبت تراکنش جدید"}

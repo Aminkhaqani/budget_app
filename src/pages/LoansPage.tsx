@@ -372,9 +372,9 @@ function ModalShell({ children, onClose }: { children: ReactNode; onClose: () =>
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute bottom-0 left-0 right-0 lg:inset-0 lg:grid lg:place-items-center">
-        <div className="mx-auto max-w-[420px] px-3 pb-4 sm:px-4 lg:w-[520px] lg:max-w-none lg:pb-0">
-          <div className="max-h-[86vh] overflow-y-auto rounded-t-3xl bg-white p-4 shadow-2xl ring-1 ring-black/5 lg:rounded-3xl">
+      <div className="absolute inset-x-0 bottom-3 top-3 lg:inset-0 lg:grid lg:place-items-center">
+        <div className="mx-auto flex h-full max-w-[420px] px-3 sm:px-4 lg:h-auto lg:w-[520px] lg:max-w-none">
+          <div className="max-h-full w-full overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl ring-1 ring-black/5 lg:max-h-[90vh]">
             {children}
           </div>
         </div>
