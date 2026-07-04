@@ -123,6 +123,12 @@ function enqueue(operation: QueuedOperation) {
   saveQueue([...loadQueue(), { ...operation, id: queueId() } as RemoteOperation]);
 }
 
+async function enqueueAndFlush(operation: QueuedOperation) {
+  enqueue(operation);
+  if (!supabase) return;
+  await flushQueuedBudgetOperations();
+}
+
 const toCategoryRow = (category: Category): CategoryRow => ({
   id: category.id,
   type: category.type,
@@ -334,7 +340,8 @@ export async function syncBudgetData() {
   if (!supabase) return null;
 
   try {
-    await flushQueuedBudgetOperations();
+    const queueFlushed = await flushQueuedBudgetOperations();
+    if (!queueFlushed) return null;
 
     const [categoriesResult, accountsResult, txsResult, plannedItemsResult, loansResult, loanInstallmentsResult] = await Promise.all([
       supabase.from("categories").select("id,type,title,icon,popular").order("type").order("title"),
@@ -401,121 +408,49 @@ export function subscribeBudgetChanges(onChange: () => void) {
 }
 
 export async function saveRemoteTx(tx: Tx) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "saveTx", tx });
-  } catch (error) {
-    enqueue({ type: "saveTx", tx });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "saveTx", tx });
 }
 
 export async function deleteRemoteTx(id: string) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "deleteTx", txId: id });
-  } catch (error) {
-    enqueue({ type: "deleteTx", txId: id });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "deleteTx", txId: id });
 }
 
 export async function saveRemoteCategory(category: Category) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "saveCategory", category });
-  } catch (error) {
-    enqueue({ type: "saveCategory", category });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "saveCategory", category });
 }
 
 export async function deleteRemoteCategory(id: string, targetCategoryId?: string) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "deleteCategory", categoryId: id, targetCategoryId });
-  } catch (error) {
-    enqueue({ type: "deleteCategory", categoryId: id, targetCategoryId });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "deleteCategory", categoryId: id, targetCategoryId });
 }
 
 export async function saveRemoteAccount(account: Account) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "saveAccount", account });
-  } catch (error) {
-    enqueue({ type: "saveAccount", account });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "saveAccount", account });
 }
 
 export async function deleteRemoteAccount(id: string) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "deleteAccount", accountId: id });
-  } catch (error) {
-    enqueue({ type: "deleteAccount", accountId: id });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "deleteAccount", accountId: id });
 }
 
 export async function saveRemotePlannedItem(plannedItem: PlannedItem) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "savePlannedItem", plannedItem });
-  } catch (error) {
-    enqueue({ type: "savePlannedItem", plannedItem });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "savePlannedItem", plannedItem });
 }
 
 export async function deleteRemotePlannedItem(id: string) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "deletePlannedItem", plannedItemId: id });
-  } catch (error) {
-    enqueue({ type: "deletePlannedItem", plannedItemId: id });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "deletePlannedItem", plannedItemId: id });
 }
 
 export async function saveRemoteLoan(loan: Loan) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "saveLoan", loan });
-  } catch (error) {
-    enqueue({ type: "saveLoan", loan });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "saveLoan", loan });
 }
 
 export async function deleteRemoteLoan(id: string) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "deleteLoan", loanId: id });
-  } catch (error) {
-    enqueue({ type: "deleteLoan", loanId: id });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "deleteLoan", loanId: id });
 }
 
 export async function saveRemoteLoanInstallment(loanInstallment: LoanInstallment) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "saveLoanInstallment", loanInstallment });
-  } catch (error) {
-    enqueue({ type: "saveLoanInstallment", loanInstallment });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "saveLoanInstallment", loanInstallment });
 }
 
 export async function deleteRemoteLoanInstallment(id: string) {
-  if (!supabase) return;
-  try {
-    await runOperation({ id: queueId(), type: "deleteLoanInstallment", loanInstallmentId: id });
-  } catch (error) {
-    enqueue({ type: "deleteLoanInstallment", loanInstallmentId: id });
-    warnRemote(error);
-  }
+  await enqueueAndFlush({ type: "deleteLoanInstallment", loanInstallmentId: id });
 }

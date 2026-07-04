@@ -103,7 +103,7 @@ export default function LoansPage() {
 
   return (
     <div className="space-y-4 pb-4">
-      <div className="sticky top-0 z-30 -mx-3 bg-bg/95 px-3 pt-4 pb-3 backdrop-blur sm:-mx-4 sm:px-4 lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pt-0">
+      <div className="sticky top-[env(safe-area-inset-top)] z-30 -mx-3 bg-bg/95 px-3 pt-4 pb-3 backdrop-blur sm:-mx-4 sm:px-4 lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pt-0">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold lg:text-xl lg:font-extrabold">تسهیلات</div>
@@ -372,7 +372,7 @@ function ModalShell({ children, onClose }: { children: ReactNode; onClose: () =>
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute inset-x-0 bottom-3 top-3 lg:inset-0 lg:grid lg:place-items-center">
+      <div className="absolute inset-x-0 bottom-3 top-[24dvh] lg:inset-0 lg:grid lg:place-items-center">
         <div className="mx-auto flex h-full max-w-[420px] px-3 sm:px-4 lg:h-auto lg:w-[520px] lg:max-w-none">
           <div className="max-h-full w-full overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl ring-1 ring-black/5 lg:max-h-[90vh]">
             {children}

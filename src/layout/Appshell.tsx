@@ -212,7 +212,7 @@ function BottomNav({ onAdd }: { onAdd: () => void }) {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-40">
-      <div className="pointer-events-none mx-auto max-w-[420px] px-3 pb-4 sm:px-4">
+      <div className="pointer-events-none mx-auto max-w-[420px] px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:px-4">
         <div className="relative pointer-events-auto">
           <button
             onClick={onAdd}
@@ -597,7 +597,7 @@ export default function Appshell() {
   return (
     <div className="min-h-dvh bg-bg text-ink">
       <DesktopSidebar onAdd={openAdd} />
-      <div className="mx-auto min-h-dvh max-w-[420px] px-3 pb-28 sm:px-4 lg:mr-64 lg:max-w-6xl lg:px-8 lg:pb-8 lg:pt-6">
+      <div className="mx-auto min-h-dvh max-w-[420px] px-3 pb-28 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:px-4 lg:mr-64 lg:max-w-6xl lg:px-8 lg:pb-8 lg:pt-6">
         <div key={routeLocation.pathname} className="route-transition">
           <Outlet
             context={{
@@ -775,7 +775,7 @@ function AddTransactionModal({
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
-      <div className="absolute inset-x-0 bottom-3 top-3 lg:inset-0 lg:grid lg:place-items-center">
+      <div className="absolute inset-x-0 bottom-3 top-[24dvh] lg:inset-0 lg:grid lg:place-items-center">
         <div className="mx-auto flex h-full max-w-[420px] px-3 sm:px-4 lg:h-auto lg:w-[520px] lg:max-w-none">
           <div className="flex max-h-full w-full flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 lg:max-h-[90vh]">
             <div className="shrink-0 px-4 py-3 border-b flex items-center justify-between">
