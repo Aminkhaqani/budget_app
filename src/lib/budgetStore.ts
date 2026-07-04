@@ -96,6 +96,15 @@ type QueuedOperation =
   | { type: "saveLoanInstallment"; loanInstallment: LoanInstallment }
   | { type: "deleteLoanInstallment"; loanInstallmentId: string };
 
+type BudgetData = {
+  categories: Category[];
+  accounts: Account[];
+  txs: Tx[];
+  plannedItems: PlannedItem[];
+  loans: Loan[];
+  loanInstallments: LoanInstallment[];
+};
+
 function warnRemote(error: unknown) {
   console.warn("Budget remote sync failed", error);
 }
@@ -249,6 +258,60 @@ const fromLoanInstallmentRow = (row: LoanInstallmentRow): LoanInstallment => ({
   note: row.note ?? undefined,
 });
 
+function upsertById<T extends { id: string }>(items: T[], item: T) {
+  return items.some((current) => current.id === item.id)
+    ? items.map((current) => (current.id === item.id ? item : current))
+    : [item, ...items];
+}
+
+function applyQueuedOperations(data: BudgetData, queue: RemoteOperation[]): BudgetData {
+  return queue.reduce<BudgetData>((next, operation) => {
+    if (operation.type === "saveTx") return { ...next, txs: upsertById(next.txs, operation.tx) };
+    if (operation.type === "deleteTx") return { ...next, txs: next.txs.filter((tx) => tx.id !== operation.txId) };
+
+    if (operation.type === "saveCategory") return { ...next, categories: upsertById(next.categories, operation.category) };
+    if (operation.type === "deleteCategory") {
+      return {
+        ...next,
+        categories: next.categories.filter((category) => category.id !== operation.categoryId),
+        txs: next.txs.map((tx) => (tx.categoryId === operation.categoryId ? { ...tx, categoryId: operation.targetCategoryId } : tx)),
+      };
+    }
+
+    if (operation.type === "saveAccount") return { ...next, accounts: upsertById(next.accounts, operation.account) };
+    if (operation.type === "deleteAccount") {
+      return {
+        ...next,
+        accounts: next.accounts.filter((account) => account.id !== operation.accountId),
+        txs: next.txs.map((tx) => ({
+          ...tx,
+          fromAccountId: tx.fromAccountId === operation.accountId ? undefined : tx.fromAccountId,
+          toAccountId: tx.toAccountId === operation.accountId ? undefined : tx.toAccountId,
+        })),
+      };
+    }
+
+    if (operation.type === "savePlannedItem") return { ...next, plannedItems: upsertById(next.plannedItems, operation.plannedItem) };
+    if (operation.type === "deletePlannedItem") return { ...next, plannedItems: next.plannedItems.filter((item) => item.id !== operation.plannedItemId) };
+
+    if (operation.type === "saveLoan") return { ...next, loans: upsertById(next.loans, operation.loan) };
+    if (operation.type === "deleteLoan") {
+      return {
+        ...next,
+        loans: next.loans.filter((loan) => loan.id !== operation.loanId),
+        loanInstallments: next.loanInstallments.filter((installment) => installment.loanId !== operation.loanId),
+      };
+    }
+
+    if (operation.type === "saveLoanInstallment") return { ...next, loanInstallments: upsertById(next.loanInstallments, operation.loanInstallment) };
+    if (operation.type === "deleteLoanInstallment") {
+      return { ...next, loanInstallments: next.loanInstallments.filter((installment) => installment.id !== operation.loanInstallmentId) };
+    }
+
+    return next;
+  }, data);
+}
+
 async function runOperation(operation: RemoteOperation) {
   if (!supabase) throw new Error("Supabase is not configured");
 
@@ -340,8 +403,7 @@ export async function syncBudgetData() {
   if (!supabase) return null;
 
   try {
-    const queueFlushed = await flushQueuedBudgetOperations();
-    if (!queueFlushed) return null;
+    await flushQueuedBudgetOperations();
 
     const [categoriesResult, accountsResult, txsResult, plannedItemsResult, loansResult, loanInstallmentsResult] = await Promise.all([
       supabase.from("categories").select("id,type,title,icon,popular").order("type").order("title"),
@@ -373,7 +435,7 @@ export async function syncBudgetData() {
     if (loansResult.error) throw loansResult.error;
     if (loanInstallmentsResult.error) throw loanInstallmentsResult.error;
 
-    return {
+    const remoteData: BudgetData = {
       categories: (categoriesResult.data ?? []).map((row) => fromCategoryRow(row as CategoryRow)),
       accounts: (accountsResult.data ?? []).map((row) => fromAccountRow(row as AccountRow)),
       txs: (txsResult.data ?? []).map((row) => fromTxRow(row as TxRow)),
@@ -381,6 +443,8 @@ export async function syncBudgetData() {
       loans: (loansResult.data ?? []).map((row) => fromLoanRow(row as LoanRow)),
       loanInstallments: (loanInstallmentsResult.data ?? []).map((row) => fromLoanInstallmentRow(row as LoanInstallmentRow)),
     };
+    const pendingQueue = loadQueue();
+    return pendingQueue.length ? applyQueuedOperations(remoteData, pendingQueue) : remoteData;
   } catch (error) {
     warnRemote(error);
     return null;
