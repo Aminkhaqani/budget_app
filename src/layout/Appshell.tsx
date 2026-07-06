@@ -29,6 +29,8 @@ import {
   deleteRemotePlannedItem,
   deleteRemoteLoan,
   deleteRemoteLoanInstallment,
+  getPendingBudgetOperationCount,
+  subscribeBudgetQueueChanges,
 } from "../lib/budgetStore";
 import { AccountModal, CategoryModal } from "../pages/SettingsPage";
 
@@ -119,6 +121,13 @@ export type LoanInstallment = {
   paidDate?: string;
   transactionId?: string;
   note?: string;
+};
+
+type SyncStatus = "idle" | "syncing" | "synced" | "pending" | "error";
+
+type SyncState = {
+  status: SyncStatus;
+  pendingCount: number;
 };
 
 const NAV_ITEMS = [
@@ -279,6 +288,33 @@ function DesktopSidebar({ onAdd }: { onAdd: () => void }) {
   );
 }
 
+function SyncIndicator({ state }: { state: SyncState }) {
+  if (state.status === "idle" || state.status === "synced") return null;
+
+  const label =
+    state.status === "syncing"
+      ? "در حال همگام‌سازی"
+      : state.status === "pending"
+      ? `در صف ذخیره: ${state.pendingCount}`
+      : "خطا در همگام‌سازی";
+
+  const tone =
+    state.status === "error"
+      ? "bg-red-50 text-red-700 ring-red-100"
+      : state.status === "pending"
+      ? "bg-orange-50 text-orange ring-orange-100"
+      : "bg-white/95 text-muted ring-black/10";
+
+  return (
+    <div
+      className={`fixed left-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-30 rounded-full px-3 py-1 text-[10px] font-extrabold shadow-sm ring-1 backdrop-blur ${tone}`}
+      dir="rtl"
+    >
+      {label}
+    </div>
+  );
+}
+
 function formatDayLabel(iso: string) {
   const t = todayISO();
   if (iso === t) return "امروز";
@@ -366,6 +402,12 @@ export default function Appshell() {
   const routeLocation = useLocation();
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const syncInFlightRef = useRef(false);
+  const syncAgainRef = useRef(false);
+  const [syncState, setSyncState] = useState<SyncState>(() => ({
+    status: navigator.onLine ? "idle" : "pending",
+    pendingCount: getPendingBudgetOperationCount(),
+  }));
 
   const [txs, setTxs] = useState<Tx[]>(() =>
     sortTxs(loadStoredArray<Tx>(STORAGE_KEYS.txs, initialTransactions))
@@ -416,27 +458,79 @@ export default function Appshell() {
     setLoanInstallments(remote.loanInstallments);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  const refreshPendingQueue = useCallback(() => {
+    const pendingCount = getPendingBudgetOperationCount();
+    setSyncState((current) => ({
+      status: pendingCount ? "pending" : current.status === "pending" ? "idle" : current.status,
+      pendingCount,
+    }));
+  }, []);
 
-    syncBudgetData().then((remote) => {
-      if (cancelled || !remote) return;
-      applyRemoteData(remote);
-    });
+  const runSync = useCallback(async () => {
+    if (syncInFlightRef.current) {
+      syncAgainRef.current = true;
+      return;
+    }
 
-    return () => {
-      cancelled = true;
-    };
+    syncInFlightRef.current = true;
+
+    try {
+      do {
+        syncAgainRef.current = false;
+        const pendingBefore = getPendingBudgetOperationCount();
+
+        if (!navigator.onLine) {
+          setSyncState({ status: pendingBefore ? "pending" : "idle", pendingCount: pendingBefore });
+          return;
+        }
+
+        setSyncState({ status: "syncing", pendingCount: pendingBefore });
+        const remote = await syncBudgetData();
+        const pendingAfter = getPendingBudgetOperationCount();
+
+        if (remote) {
+          applyRemoteData(remote);
+          setSyncState({ status: pendingAfter ? "pending" : "synced", pendingCount: pendingAfter });
+        } else {
+          setSyncState({ status: pendingAfter ? "pending" : "error", pendingCount: pendingAfter });
+        }
+      } while (syncAgainRef.current);
+    } finally {
+      syncInFlightRef.current = false;
+    }
   }, [applyRemoteData]);
+
+  const persistRemote = useCallback(
+    (operation: Promise<unknown>) => {
+      refreshPendingQueue();
+      void operation
+        .catch(() => {
+          const pendingCount = getPendingBudgetOperationCount();
+          setSyncState((current) => ({
+            status: pendingCount ? "pending" : "error",
+            pendingCount: pendingCount || current.pendingCount,
+          }));
+        })
+        .finally(() => {
+          refreshPendingQueue();
+          void runSync();
+        });
+    },
+    [refreshPendingQueue, runSync]
+  );
+
+  useEffect(() => {
+    runSync().then(() => undefined);
+  }, [runSync]);
 
   useEffect(() => {
     const resync = () => {
-      syncBudgetData().then(applyRemoteData);
+      void runSync();
     };
     const interval = window.setInterval(() => {
       if (!navigator.onLine || document.visibilityState !== "visible") return;
       resync();
-    }, 10000);
+    }, 5000);
     window.addEventListener("online", resync);
     window.addEventListener("focus", resync);
     document.addEventListener("visibilitychange", resync);
@@ -446,7 +540,7 @@ export default function Appshell() {
       window.removeEventListener("focus", resync);
       document.removeEventListener("visibilitychange", resync);
     };
-  }, [applyRemoteData]);
+  }, [runSync]);
 
   useEffect(() => {
     let syncTimeout: number | undefined;
@@ -454,7 +548,7 @@ export default function Appshell() {
       window.clearTimeout(syncTimeout);
       syncTimeout = window.setTimeout(() => {
         if (!navigator.onLine) return;
-        syncBudgetData().then(applyRemoteData);
+        void runSync();
       }, 250);
     };
     const unsubscribe = subscribeBudgetChanges(resyncSoon);
@@ -462,7 +556,14 @@ export default function Appshell() {
       window.clearTimeout(syncTimeout);
       unsubscribe();
     };
-  }, [applyRemoteData]);
+  }, [runSync]);
+
+  useEffect(() => subscribeBudgetQueueChanges((pendingCount) => {
+    setSyncState((current) => ({
+      status: pendingCount ? "pending" : current.status === "pending" ? "idle" : current.status,
+      pendingCount,
+    }));
+  }), []);
 
   const openAdd = () => {
     setEditingId(null);
@@ -476,7 +577,7 @@ export default function Appshell() {
 
   const deleteTx = (id: string) => {
     setTxs((prev) => prev.filter((t) => t.id !== id));
-    void deleteRemoteTx(id);
+    persistRemote(deleteRemoteTx(id));
     if (editingId === id) {
       setAddOpen(false);
       setEditingId(null);
@@ -499,14 +600,14 @@ export default function Appshell() {
               b.id.localeCompare(a.id)
           )
       );
-      void saveRemoteTx(nextTx);
+      persistRemote(saveRemoteTx(nextTx));
       return;
     }
     const nextTx = { ...payload, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
     setTxs((prev) =>
       sortTxs([nextTx, ...prev])
     );
-    void saveRemoteTx(nextTx);
+    persistRemote(saveRemoteTx(nextTx));
   };
 
   const saveCategory = (category: Category) => {
@@ -514,7 +615,7 @@ export default function Appshell() {
       const exists = prev.some((c) => c.id === category.id);
       return exists ? prev.map((c) => (c.id === category.id ? category : c)) : [...prev, category];
     });
-    void saveRemoteCategory(category);
+    persistRemote(saveRemoteCategory(category));
   };
 
   const deleteCategory = (id: string, targetCategoryId?: string) => {
@@ -522,7 +623,7 @@ export default function Appshell() {
     setTxs((prev) =>
       prev.map((t) => (t.categoryId === id ? { ...t, categoryId: targetCategoryId || undefined } : t))
     );
-    void deleteRemoteCategory(id, targetCategoryId);
+    persistRemote(deleteRemoteCategory(id, targetCategoryId));
   };
 
   const saveAccount = (account: Account) => {
@@ -530,7 +631,7 @@ export default function Appshell() {
       const exists = prev.some((a) => a.id === account.id);
       return exists ? prev.map((a) => (a.id === account.id ? account : a)) : [...prev, account];
     });
-    void saveRemoteAccount(account);
+    persistRemote(saveRemoteAccount(account));
   };
 
   const deleteAccount = (id: string) => {
@@ -542,7 +643,7 @@ export default function Appshell() {
         toAccountId: t.toAccountId === id ? undefined : t.toAccountId,
       }))
     );
-    void deleteRemoteAccount(id);
+    persistRemote(deleteRemoteAccount(id));
   };
 
   const savePlannedItem = (item: PlannedItem) => {
@@ -550,12 +651,12 @@ export default function Appshell() {
       const exists = prev.some((current) => current.id === item.id);
       return exists ? prev.map((current) => (current.id === item.id ? item : current)) : [...prev, item];
     });
-    void saveRemotePlannedItem(item);
+    persistRemote(saveRemotePlannedItem(item));
   };
 
   const deletePlannedItem = (id: string) => {
     setPlannedItems((prev) => prev.filter((item) => item.id !== id));
-    void deleteRemotePlannedItem(id);
+    persistRemote(deleteRemotePlannedItem(id));
   };
 
   const saveLoan = (loan: Loan) => {
@@ -563,13 +664,13 @@ export default function Appshell() {
       const exists = prev.some((current) => current.id === loan.id);
       return exists ? prev.map((current) => (current.id === loan.id ? loan : current)) : [...prev, loan];
     });
-    void saveRemoteLoan(loan);
+    persistRemote(saveRemoteLoan(loan));
   };
 
   const deleteLoan = (id: string) => {
     setLoans((prev) => prev.filter((loan) => loan.id !== id));
     setLoanInstallments((prev) => prev.filter((installment) => installment.loanId !== id));
-    void deleteRemoteLoan(id);
+    persistRemote(deleteRemoteLoan(id));
   };
 
   const saveLoanInstallment = (installment: LoanInstallment) => {
@@ -577,7 +678,7 @@ export default function Appshell() {
       const exists = prev.some((current) => current.id === installment.id);
       return exists ? prev.map((current) => (current.id === installment.id ? installment : current)) : [...prev, installment];
     });
-    void saveRemoteLoanInstallment(installment);
+    persistRemote(saveRemoteLoanInstallment(installment));
   };
 
   const saveLoanWithInstallments = (loan: Loan, installments: LoanInstallment[]) => {
@@ -586,16 +687,17 @@ export default function Appshell() {
       const others = prev.filter((item) => item.loanId !== loan.id);
       return [...others, ...installments];
     });
-    installments.forEach((installment) => void saveRemoteLoanInstallment(installment));
+    installments.forEach((installment) => persistRemote(saveRemoteLoanInstallment(installment)));
   };
 
   const deleteLoanInstallment = (id: string) => {
     setLoanInstallments((prev) => prev.filter((item) => item.id !== id));
-    void deleteRemoteLoanInstallment(id);
+    persistRemote(deleteRemoteLoanInstallment(id));
   };
 
   return (
     <div className="min-h-dvh bg-bg text-ink">
+      <SyncIndicator state={syncState} />
       <DesktopSidebar onAdd={openAdd} />
       <div className="mx-auto min-h-dvh max-w-[420px] px-3 pb-28 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:px-4 lg:mr-64 lg:max-w-6xl lg:px-8 lg:pb-8 lg:pt-6">
         <div key={routeLocation.pathname} className="route-transition">

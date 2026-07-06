@@ -7,6 +7,8 @@ const supabaseKey =
 
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 const OFFLINE_QUEUE_KEY = "budget-app:sync-queue:v1";
+const OFFLINE_QUEUE_CHANGED_EVENT = "budget-app:sync-queue-changed";
+let flushPromise: Promise<boolean> | null = null;
 
 type CategoryRow = {
   id: string;
@@ -126,6 +128,11 @@ function loadQueue(): RemoteOperation[] {
 
 function saveQueue(queue: RemoteOperation[]) {
   localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+  window.dispatchEvent(
+    new CustomEvent(OFFLINE_QUEUE_CHANGED_EVENT, {
+      detail: { pendingCount: queue.length },
+    })
+  );
 }
 
 function enqueue(operation: QueuedOperation) {
@@ -136,6 +143,18 @@ async function enqueueAndFlush(operation: QueuedOperation) {
   enqueue(operation);
   if (!supabase) return;
   await flushQueuedBudgetOperations();
+}
+
+export function getPendingBudgetOperationCount() {
+  return loadQueue().length;
+}
+
+export function subscribeBudgetQueueChanges(onChange: (pendingCount: number) => void) {
+  const listener = (event: Event) => {
+    onChange((event as CustomEvent<{ pendingCount?: number }>).detail?.pendingCount ?? loadQueue().length);
+  };
+  window.addEventListener(OFFLINE_QUEUE_CHANGED_EVENT, listener);
+  return () => window.removeEventListener(OFFLINE_QUEUE_CHANGED_EVENT, listener);
 }
 
 const toCategoryRow = (category: Category): CategoryRow => ({
@@ -382,21 +401,43 @@ async function runOperation(operation: RemoteOperation) {
 }
 
 export async function flushQueuedBudgetOperations() {
-  const queue = loadQueue();
-  if (!queue.length) return true;
+  if (flushPromise) return flushPromise;
 
-  const remaining: RemoteOperation[] = [];
-  for (const operation of queue) {
-    try {
-      await runOperation(operation);
-    } catch (error) {
-      warnRemote(error);
-      remaining.push(operation);
+  flushPromise = (async () => {
+    while (true) {
+      const queue = loadQueue();
+      if (!queue.length) return true;
+
+      const snapshotIds = new Set(queue.map((operation) => operation.id));
+      const completedIds = new Set<string>();
+      let hadFailure = false;
+
+      for (const operation of queue) {
+        try {
+          await runOperation(operation);
+          completedIds.add(operation.id);
+        } catch (error) {
+          hadFailure = true;
+          warnRemote(error);
+        }
+      }
+
+      if (completedIds.size) {
+        saveQueue(loadQueue().filter((operation) => !completedIds.has(operation.id)));
+      }
+
+      const currentQueue = loadQueue();
+      const hasNewOperations = currentQueue.some((operation) => !snapshotIds.has(operation.id));
+
+      if (hadFailure || !hasNewOperations) {
+        return currentQueue.length === 0;
+      }
     }
-  }
+  })().finally(() => {
+    flushPromise = null;
+  });
 
-  saveQueue(remaining);
-  return remaining.length === 0;
+  return flushPromise;
 }
 
 export async function syncBudgetData() {
