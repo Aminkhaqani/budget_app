@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import type { Session } from "@supabase/supabase-js";
 import {
   addDays,
   fullJalali,
@@ -30,6 +31,10 @@ import {
   deleteRemoteLoan,
   deleteRemoteLoanInstallment,
   getPendingBudgetOperationCount,
+  getBudgetSession,
+  signInBudgetUser,
+  signOutBudgetUser,
+  subscribeBudgetAuth,
   subscribeBudgetQueueChanges,
 } from "../lib/budgetStore";
 import { AccountModal, CategoryModal } from "../pages/SettingsPage";
@@ -251,7 +256,7 @@ function BottomNav({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-function DesktopSidebar({ onAdd }: { onAdd: () => void }) {
+function DesktopSidebar({ onAdd, onSignOut }: { onAdd: () => void; onSignOut: () => void }) {
   return (
     <aside className="fixed bottom-0 right-0 top-0 z-40 hidden w-64 border-l border-black/5 bg-white px-4 py-6 shadow-sm lg:block">
       <div className="text-lg font-extrabold text-ink">Budget</div>
@@ -284,6 +289,12 @@ function DesktopSidebar({ onAdd }: { onAdd: () => void }) {
           </NavLink>
         ))}
       </nav>
+      <button
+        onClick={onSignOut}
+        className="absolute bottom-6 left-4 right-4 rounded-2xl bg-bg px-4 py-3 text-sm font-extrabold text-muted hover:text-ink"
+      >
+        خروج
+      </button>
     </aside>
   );
 }
@@ -311,6 +322,76 @@ function SyncIndicator({ state }: { state: SyncState }) {
       dir="rtl"
     >
       {label}
+    </div>
+  );
+}
+
+function AuthSplash() {
+  return (
+    <div className="grid min-h-dvh place-items-center bg-bg px-6 text-center text-sm font-extrabold text-muted" dir="rtl">
+      در حال آماده‌سازی...
+    </div>
+  );
+}
+
+function LoginScreen() {
+  const [phone, setPhone] = useState("09120075905");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    setError("");
+    setSubmitting(true);
+    try {
+      await signInBudgetUser(normalizeDigits(phone), password);
+    } catch {
+      setError("شماره یا رمز درست نیست.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-dvh bg-bg px-4 pt-[calc(env(safe-area-inset-top)+3rem)] text-ink" dir="rtl">
+      <div className="mx-auto max-w-[420px] rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+        <div className="text-lg font-extrabold">ورود به بودجه</div>
+        <div className="mt-1 text-xs text-muted">برای محافظت از داده‌ها، ورود لازم است.</div>
+
+        <div className="mt-6 space-y-3">
+          <input
+            value={phone}
+            onChange={(event) => setPhone(normalizeDigits(event.target.value))}
+            inputMode="numeric"
+            autoComplete="tel"
+            className="w-full rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
+            placeholder="موبایل"
+          />
+          <input
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            type="password"
+            autoComplete="current-password"
+            className="w-full rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
+            placeholder="رمز"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void submit();
+            }}
+          />
+        </div>
+
+        {error && <div className="mt-3 text-xs font-bold text-red-600">{error}</div>}
+
+        <button
+          onClick={() => void submit()}
+          disabled={submitting || !phone.trim() || !password}
+          className={`mt-5 w-full rounded-2xl px-4 py-3 text-sm font-extrabold text-white ${
+            submitting || !phone.trim() || !password ? "bg-slate-300" : "bg-navy-900 active:bg-navy-700"
+          }`}
+        >
+          {submitting ? "در حال ورود..." : "ورود"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -404,6 +485,8 @@ export default function Appshell() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const syncInFlightRef = useRef(false);
   const syncAgainRef = useRef(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [session, setSession] = useState<Session | null>(null);
   const [syncState, setSyncState] = useState<SyncState>(() => ({
     status: navigator.onLine ? "idle" : "pending",
     pendingCount: getPendingBudgetOperationCount(),
@@ -479,6 +562,11 @@ export default function Appshell() {
         syncAgainRef.current = false;
         const pendingBefore = getPendingBudgetOperationCount();
 
+        if (!session) {
+          setSyncState({ status: pendingBefore ? "pending" : "idle", pendingCount: pendingBefore });
+          return;
+        }
+
         if (!navigator.onLine) {
           setSyncState({ status: pendingBefore ? "pending" : "idle", pendingCount: pendingBefore });
           return;
@@ -498,7 +586,7 @@ export default function Appshell() {
     } finally {
       syncInFlightRef.current = false;
     }
-  }, [applyRemoteData]);
+  }, [applyRemoteData, session]);
 
   const persistRemote = useCallback(
     (operation: Promise<unknown>) => {
@@ -520,8 +608,26 @@ export default function Appshell() {
   );
 
   useEffect(() => {
+    getBudgetSession()
+      .then((currentSession) => {
+        setSession(currentSession);
+        setAuthLoading(false);
+      })
+      .catch(() => {
+        setSession(null);
+        setAuthLoading(false);
+      });
+
+    return subscribeBudgetAuth((nextSession) => {
+      setSession(nextSession);
+      setAuthLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
     runSync().then(() => undefined);
-  }, [runSync]);
+  }, [runSync, session]);
 
   useEffect(() => {
     const resync = () => {
@@ -695,10 +801,13 @@ export default function Appshell() {
     persistRemote(deleteRemoteLoanInstallment(id));
   };
 
+  if (authLoading) return <AuthSplash />;
+  if (!session) return <LoginScreen />;
+
   return (
     <div className="min-h-dvh bg-bg text-ink">
       <SyncIndicator state={syncState} />
-      <DesktopSidebar onAdd={openAdd} />
+      <DesktopSidebar onAdd={openAdd} onSignOut={() => void signOutBudgetUser()} />
       <div className="mx-auto min-h-dvh max-w-[420px] px-3 pb-28 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:px-4 lg:mr-64 lg:max-w-6xl lg:px-8 lg:pb-8 lg:pt-6">
         <div key={routeLocation.pathname} className="route-transition">
           <Outlet

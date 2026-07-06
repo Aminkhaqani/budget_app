@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { Session } from "@supabase/supabase-js";
 import type { Account, Category, Loan, LoanInstallment, PlannedItem, Tx } from "../layout/Appshell";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://pgerefjmnybgsnbphrnh.supabase.co";
@@ -8,6 +9,8 @@ const supabaseKey =
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 const OFFLINE_QUEUE_KEY = "budget-app:sync-queue:v1";
 const OFFLINE_QUEUE_CHANGED_EVENT = "budget-app:sync-queue-changed";
+const OWNER_PHONE = "09120075905";
+const OWNER_EMAIL = "amin.khaghani.budget@gmail.com";
 let flushPromise: Promise<boolean> | null = null;
 
 type CategoryRow = {
@@ -111,6 +114,16 @@ function warnRemote(error: unknown) {
   console.warn("Budget remote sync failed", error);
 }
 
+function normalizePhone(phone: string) {
+  return phone.replace(/[^\d]/g, "").replace(/^98/, "0");
+}
+
+function phoneToEmail(phone: string) {
+  const normalized = normalizePhone(phone);
+  if (normalized !== OWNER_PHONE) throw new Error("این شماره برای این بودجه مجاز نیست.");
+  return OWNER_EMAIL;
+}
+
 function queueId() {
   return `${Date.now()}_${crypto.randomUUID()}`;
 }
@@ -155,6 +168,35 @@ export function subscribeBudgetQueueChanges(onChange: (pendingCount: number) => 
   };
   window.addEventListener(OFFLINE_QUEUE_CHANGED_EVENT, listener);
   return () => window.removeEventListener(OFFLINE_QUEUE_CHANGED_EVENT, listener);
+}
+
+export async function getBudgetSession() {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  return data.session;
+}
+
+export function subscribeBudgetAuth(onChange: (session: Session | null) => void) {
+  if (!supabase) return () => undefined;
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => onChange(session));
+  return () => data.subscription.unsubscribe();
+}
+
+export async function signInBudgetUser(phone: string, password: string) {
+  if (!supabase) throw new Error("Supabase is not configured");
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: phoneToEmail(phone),
+    password,
+  });
+  if (error) throw error;
+  return data.session;
+}
+
+export async function signOutBudgetUser() {
+  if (!supabase) return;
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
 }
 
 const toCategoryRow = (category: Category): CategoryRow => ({
