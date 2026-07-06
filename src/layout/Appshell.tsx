@@ -32,10 +32,13 @@ import {
   deleteRemoteLoanInstallment,
   getPendingBudgetOperationCount,
   getBudgetSession,
+  confirmBudgetPasswordReset,
+  requestBudgetPasswordReset,
   signInBudgetUser,
   signOutBudgetUser,
   subscribeBudgetAuth,
   subscribeBudgetQueueChanges,
+  updateBudgetPassword,
 } from "../lib/budgetStore";
 import { AccountModal, CategoryModal } from "../pages/SettingsPage";
 
@@ -335,18 +338,60 @@ function AuthSplash() {
 }
 
 function LoginScreen() {
-  const [phone, setPhone] = useState("09120075905");
+  const [mode, setMode] = useState<"login" | "forgot">("login");
+  const [identifier, setIdentifier] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   const submit = async () => {
     setError("");
+    setMessage("");
     setSubmitting(true);
     try {
-      await signInBudgetUser(normalizeDigits(phone), password);
+      await signInBudgetUser(normalizeDigits(identifier), password);
     } catch {
-      setError("شماره یا رمز درست نیست.");
+      setError("ایمیل/موبایل یا رمز درست نیست.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const requestReset = async () => {
+    setError("");
+    setMessage("");
+    setSubmitting(true);
+    try {
+      await requestBudgetPasswordReset(resetEmail);
+      setResetSent(true);
+      setMessage("ایمیل بازیابی ارسال شد. اگر کد داخل ایمیل بود، اینجا وارد کن؛ اگر لینک بود، لینک را باز کن.");
+    } catch {
+      setError("ارسال کد بازیابی انجام نشد. ایمیل را چک کن.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const confirmReset = async () => {
+    setError("");
+    setMessage("");
+    setSubmitting(true);
+    try {
+      await confirmBudgetPasswordReset(resetEmail, resetToken, resetPassword);
+      setMode("login");
+      setIdentifier(resetEmail);
+      setPassword("");
+      setResetToken("");
+      setResetPassword("");
+      setResetSent(false);
+      setMessage("رمز عوض شد. حالا وارد شو.");
+    } catch {
+      setError("کد یا رمز جدید معتبر نیست.");
     } finally {
       setSubmitting(false);
     }
@@ -355,41 +400,176 @@ function LoginScreen() {
   return (
     <div className="min-h-dvh bg-bg px-4 pt-[calc(env(safe-area-inset-top)+3rem)] text-ink" dir="rtl">
       <div className="mx-auto max-w-[420px] rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-        <div className="text-lg font-extrabold">ورود به بودجه</div>
-        <div className="mt-1 text-xs text-muted">برای محافظت از داده‌ها، ورود لازم است.</div>
-
-        <div className="mt-6 space-y-3">
-          <input
-            value={phone}
-            onChange={(event) => setPhone(normalizeDigits(event.target.value))}
-            inputMode="numeric"
-            autoComplete="tel"
-            className="w-full rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
-            placeholder="موبایل"
-          />
-          <input
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            type="password"
-            autoComplete="current-password"
-            className="w-full rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
-            placeholder="رمز"
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void submit();
-            }}
-          />
+        <div className="text-lg font-extrabold">{mode === "login" ? "ورود به بودجه" : "بازیابی رمز"}</div>
+        <div className="mt-1 text-xs text-muted">
+          {mode === "login" ? "همه با ایمیل وارد می‌شوند؛ ادمین با موبایل." : "ایمیل را وارد کن تا کد یک‌بارمصرف بگیری."}
         </div>
+
+        {mode === "login" ? (
+          <>
+            <div className="mt-6 space-y-3">
+              <input
+                value={identifier}
+                onChange={(event) => setIdentifier(normalizeDigits(event.target.value))}
+                inputMode="email"
+                autoComplete="username"
+                className="w-full rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
+                placeholder="ایمیل یا موبایل ادمین"
+              />
+              <input
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                type="password"
+                autoComplete="current-password"
+                className="w-full rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
+                placeholder="رمز"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void submit();
+                }}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMode("forgot");
+                setError("");
+                setMessage("");
+                setResetEmail(identifier.includes("@") ? identifier : "");
+              }}
+              className="mt-3 text-xs font-extrabold text-muted hover:text-ink"
+            >
+              فراموشی رمز عبور
+            </button>
+          </>
+        ) : (
+          <div className="mt-6 space-y-3">
+            <input
+              value={resetEmail}
+              onChange={(event) => setResetEmail(normalizeDigits(event.target.value))}
+              inputMode="email"
+              autoComplete="email"
+              className="w-full rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
+              placeholder="ایمیل"
+              disabled={resetSent}
+            />
+
+            {resetSent && (
+              <>
+                <input
+                  value={resetToken}
+                  onChange={(event) => setResetToken(normalizeDigits(event.target.value))}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className="w-full rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
+                  placeholder="کد یک‌بارمصرف"
+                />
+                <input
+                  value={resetPassword}
+                  onChange={(event) => setResetPassword(event.target.value)}
+                  type="password"
+                  autoComplete="new-password"
+                  className="w-full rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
+                  placeholder="رمز جدید"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void confirmReset();
+                  }}
+                />
+              </>
+            )}
+          </div>
+        )}
+
+        {error && <div className="mt-3 text-xs font-bold text-red-600">{error}</div>}
+        {message && <div className="mt-3 text-xs font-bold text-emerald-700">{message}</div>}
+
+        {mode === "login" ? (
+          <button
+            onClick={() => void submit()}
+            disabled={submitting || !identifier.trim() || !password}
+            className={`mt-5 w-full rounded-2xl px-4 py-3 text-sm font-extrabold text-white ${
+              submitting || !identifier.trim() || !password ? "bg-slate-300" : "bg-navy-900 active:bg-navy-700"
+            }`}
+          >
+            {submitting ? "در حال ورود..." : "ورود"}
+          </button>
+        ) : (
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <button
+              onClick={() => void (resetSent ? confirmReset() : requestReset())}
+              disabled={submitting || !resetEmail.trim() || (resetSent && (!resetToken.trim() || resetPassword.length < 8))}
+              className={`rounded-2xl px-4 py-3 text-sm font-extrabold text-white ${
+                submitting || !resetEmail.trim() || (resetSent && (!resetToken.trim() || resetPassword.length < 8))
+                  ? "bg-slate-300"
+                  : "bg-navy-900 active:bg-navy-700"
+              }`}
+            >
+              {submitting ? "در حال انجام..." : resetSent ? "ثبت رمز جدید" : "ارسال کد"}
+            </button>
+            <button
+              onClick={() => {
+                setMode("login");
+                setError("");
+                setMessage("");
+              }}
+              className="rounded-2xl bg-bg px-4 py-3 text-sm font-extrabold text-muted"
+            >
+              برگشت
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PasswordRecoveryScreen() {
+  const [newPassword, setNewPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    setError("");
+    setSubmitting(true);
+    try {
+      await updateBudgetPassword(newPassword);
+      window.history.replaceState(null, "", window.location.pathname);
+      await signOutBudgetUser();
+    } catch {
+      setError("رمز جدید ثبت نشد. حداقل ۸ کاراکتر وارد کن.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-dvh bg-bg px-4 pt-[calc(env(safe-area-inset-top)+3rem)] text-ink" dir="rtl">
+      <div className="mx-auto max-w-[420px] rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+        <div className="text-lg font-extrabold">ثبت رمز جدید</div>
+        <div className="mt-1 text-xs text-muted">رمز جدیدت را وارد کن، بعد دوباره وارد اپ شو.</div>
+
+        <input
+          value={newPassword}
+          onChange={(event) => setNewPassword(event.target.value)}
+          type="password"
+          autoComplete="new-password"
+          className="mt-6 w-full rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
+          placeholder="رمز جدید"
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void submit();
+          }}
+        />
 
         {error && <div className="mt-3 text-xs font-bold text-red-600">{error}</div>}
 
         <button
           onClick={() => void submit()}
-          disabled={submitting || !phone.trim() || !password}
+          disabled={submitting || newPassword.length < 8}
           className={`mt-5 w-full rounded-2xl px-4 py-3 text-sm font-extrabold text-white ${
-            submitting || !phone.trim() || !password ? "bg-slate-300" : "bg-navy-900 active:bg-navy-700"
+            submitting || newPassword.length < 8 ? "bg-slate-300" : "bg-navy-900 active:bg-navy-700"
           }`}
         >
-          {submitting ? "در حال ورود..." : "ورود"}
+          {submitting ? "در حال ثبت..." : "ثبت رمز جدید"}
         </button>
       </div>
     </div>
@@ -487,6 +667,7 @@ export default function Appshell() {
   const syncAgainRef = useRef(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
+  const [passwordRecovery, setPasswordRecovery] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("type") === "recovery");
   const [syncState, setSyncState] = useState<SyncState>(() => ({
     status: navigator.onLine ? "idle" : "pending",
     pendingCount: getPendingBudgetOperationCount(),
@@ -618,7 +799,8 @@ export default function Appshell() {
         setAuthLoading(false);
       });
 
-    return subscribeBudgetAuth((nextSession) => {
+    return subscribeBudgetAuth((nextSession, event) => {
+      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
       setSession(nextSession);
       setAuthLoading(false);
     });
@@ -802,6 +984,7 @@ export default function Appshell() {
   };
 
   if (authLoading) return <AuthSplash />;
+  if (passwordRecovery && session) return <PasswordRecoveryScreen />;
   if (!session) return <LoginScreen />;
 
   return (

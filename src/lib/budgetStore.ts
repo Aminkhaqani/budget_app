@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Session } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import type { Account, Category, Loan, LoanInstallment, PlannedItem, Tx } from "../layout/Appshell";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://pgerefjmnybgsnbphrnh.supabase.co";
@@ -118,10 +118,15 @@ function normalizePhone(phone: string) {
   return phone.replace(/[^\d]/g, "").replace(/^98/, "0");
 }
 
-function phoneToEmail(phone: string) {
-  const normalized = normalizePhone(phone);
-  if (normalized !== OWNER_PHONE) throw new Error("این شماره برای این بودجه مجاز نیست.");
-  return OWNER_EMAIL;
+function isEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function resolveLoginEmail(identifier: string) {
+  const normalized = identifier.trim();
+  if (isEmail(normalized)) return normalized.toLowerCase();
+  if (normalizePhone(normalized) === OWNER_PHONE) return OWNER_EMAIL;
+  throw new Error("برای ورود، ایمیل معتبر وارد کن. ادمین می‌تواند با موبایل وارد شود.");
 }
 
 function queueId() {
@@ -177,20 +182,52 @@ export async function getBudgetSession() {
   return data.session;
 }
 
-export function subscribeBudgetAuth(onChange: (session: Session | null) => void) {
+export function subscribeBudgetAuth(onChange: (session: Session | null, event: AuthChangeEvent) => void) {
   if (!supabase) return () => undefined;
-  const { data } = supabase.auth.onAuthStateChange((_event, session) => onChange(session));
+  const { data } = supabase.auth.onAuthStateChange((event, session) => onChange(session, event));
   return () => data.subscription.unsubscribe();
 }
 
-export async function signInBudgetUser(phone: string, password: string) {
+export async function signInBudgetUser(identifier: string, password: string) {
   if (!supabase) throw new Error("Supabase is not configured");
   const { data, error } = await supabase.auth.signInWithPassword({
-    email: phoneToEmail(phone),
+    email: resolveLoginEmail(identifier),
     password,
   });
   if (error) throw error;
   return data.session;
+}
+
+export async function requestBudgetPasswordReset(email: string) {
+  if (!supabase) throw new Error("Supabase is not configured");
+  if (!isEmail(email)) throw new Error("ایمیل معتبر وارد کن.");
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+    redirectTo: window.location.origin,
+  });
+  if (error) throw error;
+}
+
+export async function confirmBudgetPasswordReset(email: string, token: string, newPassword: string) {
+  if (!supabase) throw new Error("Supabase is not configured");
+  if (!isEmail(email)) throw new Error("ایمیل معتبر وارد کن.");
+  const cleanToken = token.trim().replace(/\s/g, "");
+  if (!cleanToken) throw new Error("کد بازیابی را وارد کن.");
+
+  const { error: otpError } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: cleanToken,
+    type: "recovery",
+  });
+  if (otpError) throw otpError;
+
+  const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+  if (updateError) throw updateError;
+}
+
+export async function updateBudgetPassword(newPassword: string) {
+  if (!supabase) throw new Error("Supabase is not configured");
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
 }
 
 export async function signOutBudgetUser() {
