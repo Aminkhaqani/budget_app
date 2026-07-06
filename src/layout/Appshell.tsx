@@ -33,6 +33,10 @@ import {
   getPendingBudgetOperationCount,
   getBudgetSession,
   confirmBudgetPasswordReset,
+  createSupportTicket,
+  ensureBudgetProfile,
+  isBudgetAdmin,
+  loadSupportTickets,
   requestBudgetPasswordReset,
   signInBudgetUser,
   signOutBudgetUser,
@@ -40,6 +44,7 @@ import {
   subscribeBudgetQueueChanges,
   updateBudgetPassword,
 } from "../lib/budgetStore";
+import type { SupportTicket } from "../lib/budgetStore";
 import { AccountModal, CategoryModal } from "../pages/SettingsPage";
 
 const STORAGE_KEYS = {
@@ -149,6 +154,8 @@ const NAV_ITEMS = [
 const DESKTOP_NAV_ITEMS = [
   ...NAV_ITEMS,
   { to: "/loans", label: "تسهیلات", icon: "finance" },
+  { to: "/customers", label: "مشتریان", icon: "settings" },
+  { to: "/support", label: "پشتیبانی", icon: "tx" },
 ] as const;
 
 type NavIconName = (typeof NAV_ITEMS)[number]["icon"];
@@ -576,6 +583,161 @@ function PasswordRecoveryScreen() {
   );
 }
 
+function supportCategoryLabel(category: SupportTicket["category"]) {
+  if (category === "bug") return "باگ";
+  if (category === "improvement") return "پیشنهاد بهبود";
+  if (category === "error") return "خطا";
+  if (category === "question") return "سوال";
+  return "سایر";
+}
+
+function supportStatusLabel(status: SupportTicket["status"]) {
+  if (status === "open") return "باز";
+  if (status === "in_progress") return "در حال بررسی";
+  if (status === "resolved") return "حل‌شده";
+  return "بسته";
+}
+
+function CustomerPortal() {
+  const [subject, setSubject] = useState("");
+  const [category, setCategory] = useState<SupportTicket["category"]>("bug");
+  const [priority, setPriority] = useState<SupportTicket["priority"]>("normal");
+  const [body, setBody] = useState("");
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const refresh = useCallback(() => {
+    setLoading(true);
+    loadSupportTickets()
+      .then(setTickets)
+      .catch(() => setTickets([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const submit = async () => {
+    if (!subject.trim() || !body.trim()) return;
+    setSubmitting(true);
+    setMessage("");
+    try {
+      const ticket = await createSupportTicket({
+        subject: subject.trim(),
+        category,
+        priority,
+        body: body.trim(),
+      });
+      setTickets((current) => [ticket, ...current]);
+      setSubject("");
+      setBody("");
+      setCategory("bug");
+      setPriority("normal");
+      setMessage("تیکت ثبت شد.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-dvh bg-bg px-4 pb-8 pt-[calc(env(safe-area-inset-top)+1rem)] text-ink" dir="rtl">
+      <div className="mx-auto max-w-[520px] space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-lg font-extrabold">تماس با پشتیبانی</div>
+            <div className="mt-1 text-xs text-muted">باگ، خطا، پیشنهاد یا هر مورد لازم را ثبت کن.</div>
+          </div>
+          <button onClick={() => void signOutBudgetUser()} className="rounded-2xl bg-white px-4 py-2 text-xs font-extrabold text-muted ring-1 ring-black/5">
+            خروج
+          </button>
+        </div>
+
+        <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+          <div className="text-sm font-extrabold">تیکت جدید</div>
+          <div className="mt-3 space-y-3">
+            <input
+              value={subject}
+              onChange={(event) => setSubject(event.target.value)}
+              className="w-full rounded-2xl bg-bg px-4 py-3 text-sm ring-1 ring-black/5 outline-none focus:ring-navy-900/20"
+              placeholder="موضوع"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={category}
+                onChange={(event) => setCategory(event.target.value as SupportTicket["category"])}
+                className="rounded-2xl bg-bg px-3 py-3 text-sm font-bold text-ink ring-1 ring-black/5 outline-none"
+              >
+                <option value="bug">باگ</option>
+                <option value="improvement">پیشنهاد بهبود</option>
+                <option value="error">خطا</option>
+                <option value="question">سوال</option>
+                <option value="other">سایر</option>
+              </select>
+              <select
+                value={priority}
+                onChange={(event) => setPriority(event.target.value as SupportTicket["priority"])}
+                className="rounded-2xl bg-bg px-3 py-3 text-sm font-bold text-ink ring-1 ring-black/5 outline-none"
+              >
+                <option value="normal">معمولی</option>
+                <option value="high">مهم</option>
+                <option value="low">کم‌اهمیت</option>
+              </select>
+            </div>
+            <textarea
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              rows={5}
+              className="w-full resize-none rounded-2xl bg-bg px-4 py-3 text-sm leading-7 ring-1 ring-black/5 outline-none focus:ring-navy-900/20"
+              placeholder="شرح کامل مورد"
+            />
+            {message && <div className="text-xs font-bold text-emerald-700">{message}</div>}
+            <button
+              onClick={() => void submit()}
+              disabled={submitting || !subject.trim() || !body.trim()}
+              className={`w-full rounded-2xl px-4 py-3 text-sm font-extrabold text-white ${
+                submitting || !subject.trim() || !body.trim() ? "bg-slate-300" : "bg-navy-900 active:bg-navy-700"
+              }`}
+            >
+              {submitting ? "در حال ثبت..." : "ثبت تیکت"}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+          <div className="text-sm font-extrabold">تیکت‌های من</div>
+          <div className="mt-3 space-y-2">
+            {loading ? (
+              <div className="rounded-2xl bg-bg px-3 py-3 text-xs text-muted">در حال دریافت...</div>
+            ) : tickets.length === 0 ? (
+              <div className="rounded-2xl bg-bg px-3 py-3 text-xs text-muted">هنوز تیکتی ثبت نشده.</div>
+            ) : (
+              tickets.map((ticket) => (
+                <div key={ticket.id} className="rounded-2xl bg-bg px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-extrabold text-ink">{ticket.subject}</div>
+                      <div className="mt-1 text-[11px] text-muted">
+                        {supportCategoryLabel(ticket.category)} · {supportStatusLabel(ticket.status)}
+                      </div>
+                    </div>
+                    <div className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-extrabold text-muted ring-1 ring-black/5">
+                      {ticket.priority === "high" ? "مهم" : ticket.priority === "low" ? "کم" : "معمولی"}
+                    </div>
+                  </div>
+                  <div className="mt-2 line-clamp-2 text-xs leading-6 text-muted">{ticket.body}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function formatDayLabel(iso: string) {
   const t = todayISO();
   if (iso === t) return "امروز";
@@ -792,6 +954,7 @@ export default function Appshell() {
     getBudgetSession()
       .then((currentSession) => {
         setSession(currentSession);
+        if (currentSession) void ensureBudgetProfile(currentSession);
         setAuthLoading(false);
       })
       .catch(() => {
@@ -802,6 +965,7 @@ export default function Appshell() {
     return subscribeBudgetAuth((nextSession, event) => {
       if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
       setSession(nextSession);
+      if (nextSession) void ensureBudgetProfile(nextSession);
       setAuthLoading(false);
     });
   }, []);
@@ -986,6 +1150,7 @@ export default function Appshell() {
   if (authLoading) return <AuthSplash />;
   if (passwordRecovery && session) return <PasswordRecoveryScreen />;
   if (!session) return <LoginScreen />;
+  if (!isBudgetAdmin(session)) return <CustomerPortal />;
 
   return (
     <div className="min-h-dvh bg-bg text-ink">

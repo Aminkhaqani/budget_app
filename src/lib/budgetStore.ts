@@ -9,9 +9,60 @@ const supabaseKey =
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 const OFFLINE_QUEUE_KEY = "budget-app:sync-queue:v1";
 const OFFLINE_QUEUE_CHANGED_EVENT = "budget-app:sync-queue-changed";
+export const BUDGET_ADMIN_USER_ID = "b0d75905-0912-4000-9000-000000000001";
 const OWNER_PHONE = "09120075905";
 const OWNER_EMAIL = "amin.khaghani.budget@gmail.com";
 let flushPromise: Promise<boolean> | null = null;
+
+export type BudgetProfile = {
+  id: string;
+  email?: string;
+  phone?: string;
+  displayName?: string;
+  role: "admin" | "customer";
+  status: "active" | "blocked";
+  lastSeenAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SupportTicket = {
+  id: string;
+  customerId: string;
+  subject: string;
+  category: "bug" | "improvement" | "error" | "question" | "other";
+  status: "open" | "in_progress" | "resolved" | "closed";
+  priority: "low" | "normal" | "high";
+  body: string;
+  adminNote?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type BudgetProfileRow = {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  display_name: string | null;
+  role: "admin" | "customer";
+  status: "active" | "blocked";
+  last_seen_at: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type SupportTicketRow = {
+  id: string;
+  customer_id: string;
+  subject: string;
+  category: SupportTicket["category"];
+  status: SupportTicket["status"];
+  priority: SupportTicket["priority"];
+  body: string;
+  admin_note: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
 
 type CategoryRow = {
   id: string;
@@ -236,6 +287,100 @@ export async function signOutBudgetUser() {
   if (error) throw error;
 }
 
+export function isBudgetAdmin(session: Session | null) {
+  return session?.user.id === BUDGET_ADMIN_USER_ID;
+}
+
+export async function ensureBudgetProfile(session: Session) {
+  if (!supabase) throw new Error("Supabase is not configured");
+  const profile: BudgetProfileRow = {
+    id: session.user.id,
+    email: session.user.email ?? null,
+    phone: session.user.phone ?? null,
+    display_name: session.user.user_metadata?.display_name ?? session.user.email ?? session.user.phone ?? null,
+    role: session.user.id === BUDGET_ADMIN_USER_ID ? "admin" : "customer",
+    status: "active",
+    last_seen_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .upsert(profile, { onConflict: "id" })
+    .select("id,email,phone,display_name,role,status,last_seen_at,created_at,updated_at")
+    .single();
+  if (error) throw error;
+  return fromBudgetProfileRow(data as BudgetProfileRow);
+}
+
+export async function loadBudgetProfiles() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("id,email,phone,display_name,role,status,last_seen_at,created_at,updated_at")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => fromBudgetProfileRow(row as BudgetProfileRow));
+}
+
+export async function saveBudgetProfile(profile: Pick<BudgetProfile, "id" | "displayName" | "status" | "role">) {
+  if (!supabase) throw new Error("Supabase is not configured");
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .update({
+      display_name: profile.displayName ?? null,
+      status: profile.status,
+      role: profile.role,
+    })
+    .eq("id", profile.id)
+    .select("id,email,phone,display_name,role,status,last_seen_at,created_at,updated_at")
+    .single();
+  if (error) throw error;
+  return fromBudgetProfileRow(data as BudgetProfileRow);
+}
+
+export async function loadSupportTickets() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("support_tickets")
+    .select("id,customer_id,subject,category,status,priority,body,admin_note,created_at,updated_at")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => fromSupportTicketRow(row as SupportTicketRow));
+}
+
+export async function createSupportTicket(input: Pick<SupportTicket, "subject" | "category" | "priority" | "body">) {
+  if (!supabase) throw new Error("Supabase is not configured");
+  const { data, error } = await supabase
+    .from("support_tickets")
+    .insert({
+      subject: input.subject,
+      category: input.category,
+      priority: input.priority,
+      body: input.body,
+    })
+    .select("id,customer_id,subject,category,status,priority,body,admin_note,created_at,updated_at")
+    .single();
+  if (error) throw error;
+  return fromSupportTicketRow(data as SupportTicketRow);
+}
+
+export async function updateSupportTicket(input: Pick<SupportTicket, "id"> & Partial<Pick<SupportTicket, "status" | "priority" | "adminNote">>) {
+  if (!supabase) throw new Error("Supabase is not configured");
+  const update: Partial<Pick<SupportTicketRow, "status" | "priority" | "admin_note">> = {};
+  if (input.status) update.status = input.status;
+  if (input.priority) update.priority = input.priority;
+  if ("adminNote" in input) update.admin_note = input.adminNote ?? null;
+
+  const { data, error } = await supabase
+    .from("support_tickets")
+    .update(update)
+    .eq("id", input.id)
+    .select("id,customer_id,subject,category,status,priority,body,admin_note,created_at,updated_at")
+    .single();
+  if (error) throw error;
+  return fromSupportTicketRow(data as SupportTicketRow);
+}
+
 const toCategoryRow = (category: Category): CategoryRow => ({
   id: category.id,
   type: category.type,
@@ -354,6 +499,31 @@ const fromLoanInstallmentRow = (row: LoanInstallmentRow): LoanInstallment => ({
   paidDate: row.paid_date ?? undefined,
   transactionId: row.transaction_id ?? undefined,
   note: row.note ?? undefined,
+});
+
+const fromBudgetProfileRow = (row: BudgetProfileRow): BudgetProfile => ({
+  id: row.id,
+  email: row.email ?? undefined,
+  phone: row.phone ?? undefined,
+  displayName: row.display_name ?? undefined,
+  role: row.role,
+  status: row.status,
+  lastSeenAt: row.last_seen_at ?? undefined,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const fromSupportTicketRow = (row: SupportTicketRow): SupportTicket => ({
+  id: row.id,
+  customerId: row.customer_id,
+  subject: row.subject,
+  category: row.category,
+  status: row.status,
+  priority: row.priority,
+  body: row.body,
+  adminNote: row.admin_note ?? undefined,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 });
 
 function upsertById<T extends { id: string }>(items: T[], item: T) {
