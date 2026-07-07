@@ -409,7 +409,7 @@ function LoginScreen() {
       <div className="mx-auto max-w-[420px] rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
         <div className="text-lg font-extrabold">{mode === "login" ? "ورود به بودجه" : "بازیابی رمز"}</div>
         <div className="mt-1 text-xs text-muted">
-          {mode === "login" ? "همه با ایمیل وارد می‌شوند؛ ادمین با موبایل." : "ایمیل را وارد کن تا کد یک‌بارمصرف بگیری."}
+          {mode === "login" ? "برای ادامه وارد حساب کاربری شو." : "ایمیل را وارد کن تا کد یک‌بارمصرف بگیری."}
         </div>
 
         {mode === "login" ? (
