@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useOutletContext } from "react-router-dom";
-import type { Loan, LoanInstallment } from "../layout/Appshell";
+import type { Account, Loan, LoanInstallment } from "../layout/Appshell";
 import {
   findGregorianForJalali,
   fullJalali,
@@ -17,9 +17,11 @@ import {
 type Ctx = {
   loans: Loan[];
   loanInstallments: LoanInstallment[];
+  accounts: Account[];
   deleteLoan: (id: string) => void;
   saveLoanInstallment: (installment: LoanInstallment) => void;
   saveLoanWithInstallments: (loan: Loan, installments: LoanInstallment[]) => void;
+  saveLoanReceipt: (loan: Loan, installments: LoanInstallment[], destinationAccountId: string) => void;
   deleteLoanInstallment: (id: string) => void;
 };
 
@@ -54,9 +56,10 @@ export default function LoansPage() {
   const {
     loans,
     loanInstallments,
+    accounts,
     deleteLoan,
     saveLoanInstallment,
-    saveLoanWithInstallments,
+    saveLoanReceipt,
     deleteLoanInstallment,
   } = useOutletContext<Ctx>();
   const [selectedLoanId, setSelectedLoanId] = useState(loans[0]?.id ?? "");
@@ -221,9 +224,10 @@ export default function LoansPage() {
 
       {loanModalOpen && (
         <LoanModal
+          accounts={accounts}
           onClose={() => setLoanModalOpen(false)}
           onSubmit={(loan, installments) => {
-            saveLoanWithInstallments(loan, installments);
+            saveLoanReceipt(loan, installments, loan.receivedAccountId ?? accounts[0]?.id ?? "");
             setSelectedLoanId(loan.id);
             setLoanModalOpen(false);
           }}
@@ -392,7 +396,7 @@ function ModalHeader({ title, onClose }: { title: string; onClose: () => void })
   );
 }
 
-function LoanModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (loan: Loan, installments: LoanInstallment[]) => void }) {
+function LoanModal({ accounts, onClose, onSubmit }: { accounts: Account[]; onClose: () => void; onSubmit: (loan: Loan, installments: LoanInstallment[]) => void }) {
   const [title, setTitle] = useState("");
   const [lender, setLender] = useState("");
   const [principalRaw, setPrincipalRaw] = useState("");
@@ -401,6 +405,7 @@ function LoanModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (loan
   const [firstDueDraft, setFirstDueDraft] = useState(jalaliISODate(todayISO()));
   const [installmentRaw, setInstallmentRaw] = useState("");
   const [note, setNote] = useState("");
+  const [receivedAccountId, setReceivedAccountId] = useState(accounts.find((account) => (account.kind ?? "cash") === "cash")?.id ?? accounts[0]?.id ?? "");
 
   const submit = () => {
     const principal = parseAmount(principalRaw);
@@ -418,6 +423,7 @@ function LoanModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (loan
       principalToman: principal,
       receivedDate,
       active: true,
+      receivedAccountId,
       note: note.trim() || undefined,
     };
     const installments = Array.from({ length: count }, (_, index): LoanInstallment => ({
@@ -443,6 +449,13 @@ function LoanModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (loan
           <DateField label="اولین سررسید" value={firstDueDraft} onChange={setFirstDueDraft} />
         </div>
         <Field label="مبلغ هر قسط" value={installmentRaw} onChange={(value) => setInstallmentRaw(formatAmountInput(value))} ltr />
+        <select
+          value={receivedAccountId}
+          onChange={(event) => setReceivedAccountId(event.target.value)}
+          className="w-full rounded-2xl bg-bg px-3 py-3 text-sm font-bold text-ink ring-1 ring-black/5 outline-none"
+        >
+          {accounts.map((account) => <option key={account.id} value={account.id}>واریز به {account.title}</option>)}
+        </select>
         <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="توضیح اختیاری" className="w-full rounded-2xl bg-bg px-3 py-3 text-sm ring-1 ring-black/5 outline-none" />
         <button onClick={submit} className="w-full rounded-2xl bg-navy-900 px-4 py-3 text-sm font-extrabold text-white">ثبت تسهیلات</button>
       </div>

@@ -1,8 +1,10 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { fullJalali, jalaliISODate, normalizeDigits } from "../lib/date";
 import type { Account, Category, PlannedItem, Tx } from "../layout/Appshell";
+import { BANK_OPTIONS, BankLogo, bankLabel } from "../components/BankLogo";
+import { accountBalance, totalCashBalance } from "../lib/accounts";
 
 type Ctx = {
   txs: Tx[];
@@ -28,7 +30,21 @@ const emptyCategory = (): Category => ({
   popular: false,
 });
 
-const emptyAccount = (): Account => ({ id: "", title: "", openingBalanceToman: 0 });
+const emptyAccount = (): Account => ({
+  id: "",
+  title: "",
+  kind: "cash",
+  openingBalanceToman: 0,
+  bankKey: "generic",
+  defaultForExpense: false,
+  defaultForIncome: false,
+});
+const ACCOUNT_KIND_OPTIONS: Array<{ key: NonNullable<Account["kind"]>; label: string; tone: string }> = [
+  { key: "cash", label: "نقدی", tone: "bg-emerald-50 text-emerald-700" },
+  { key: "investment", label: "سرمایه‌گذاری", tone: "bg-blue-50 text-blue-700" },
+  { key: "debt", label: "بدهی", tone: "bg-red-50 text-red-700" },
+  { key: "receivable", label: "طلب", tone: "bg-violet-50 text-violet-700" },
+];
 const emptyPlannedItem = (): PlannedItem => ({
   id: "",
   title: "",
@@ -39,6 +55,13 @@ const emptyPlannedItem = (): PlannedItem => ({
 });
 const parseAmount = (value: string) => Number(normalizeDigits(value).replace(/[^\d]/g, "")) || 0;
 const money = (value: number) => new Intl.NumberFormat("fa-IR").format(Math.abs(Math.round(value)));
+function accountKindLabel(kind?: Account["kind"]) {
+  return ACCOUNT_KIND_OPTIONS.find((option) => option.key === (kind ?? "cash"))?.label ?? "نقدی";
+}
+
+function accountKindTone(kind?: Account["kind"]) {
+  return ACCOUNT_KIND_OPTIONS.find((option) => option.key === (kind ?? "cash"))?.tone ?? "bg-emerald-50 text-emerald-700";
+}
 
 export default function SettingsPage() {
   const {
@@ -54,12 +77,23 @@ export default function SettingsPage() {
     deletePlannedItem,
     openEdit,
   } = useOutletContext<Ctx>();
-  const [tab, setTab] = useState<Tab>("categories");
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab");
+  const [tab, setTabState] = useState<Tab>(initialTab === "accounts" || initialTab === "plans" ? initialTab : "categories");
   const [categoryDraft, setCategoryDraft] = useState<Category | null>(null);
   const [accountDraft, setAccountDraft] = useState<Account | null>(null);
   const [plannedDraft, setPlannedDraft] = useState<PlannedItem | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<Category | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+
+  const setTab = (next: Tab) => {
+    setTabState(next);
+    const params = new URLSearchParams(searchParams);
+    if (next === "categories") params.delete("tab");
+    else params.set("tab", next);
+    setSearchParams(params, { replace: true });
+  };
 
   const categoryUsage = (categoryId: string) => txs.filter((tx) => tx.categoryId === categoryId).length;
   const categoryTxs = (categoryId: string) =>
@@ -88,6 +122,11 @@ export default function SettingsPage() {
       id: account.id || `a_${crypto.randomUUID()}`,
       title,
       openingBalanceToman: Number(account.openingBalanceToman) || 0,
+      kind: account.kind ?? "cash",
+      bankKey: account.bankKey || "generic",
+      color: account.color,
+      defaultForExpense: !!account.defaultForExpense,
+      defaultForIncome: !!account.defaultForIncome,
     });
     setAccountDraft(null);
   };
@@ -171,10 +210,17 @@ export default function SettingsPage() {
         </>
       ) : tab === "accounts" ? (
         <Section title="حساب‌ها">
+          <div className="mb-3 rounded-2xl bg-navy-900 px-3 py-3 text-white">
+            <div className="text-[11px] text-white/65">مانده نقد کل</div>
+            <div className="mt-1 text-xl font-extrabold">{money(totalCashBalance(accounts, txs))}</div>
+            <div className="mt-1 text-[10px] font-bold text-white/50">فقط حساب‌های نقدی لحاظ شده‌اند</div>
+          </div>
           {accounts.map((account) => (
             <AccountRow
               key={account.id}
               account={account}
+              balance={accountBalance(account, txs)}
+              onTransactions={() => navigate(`/transactions?account=${encodeURIComponent(account.id)}&period=month`)}
               onEdit={() => setAccountDraft(account)}
               onDelete={() => {
                 if (window.confirm("این حساب حذف شود؟")) deleteAccount(account.id);
@@ -214,6 +260,7 @@ export default function SettingsPage() {
       {accountDraft && (
         <AccountModal
           value={accountDraft}
+          txs={txs}
           onChange={setAccountDraft}
           onClose={() => setAccountDraft(null)}
           onSubmit={() => submitAccount(accountDraft)}
@@ -383,12 +430,38 @@ function CategoryTransactionsModal({
   );
 }
 
-function AccountRow({ account, onEdit, onDelete }: { account: Account; onEdit: () => void; onDelete: () => void }) {
+function AccountRow({
+  account,
+  balance,
+  onTransactions,
+  onEdit,
+  onDelete,
+}: {
+  account: Account;
+  balance: number;
+  onTransactions: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-bg px-3 py-2">
-      <div className="min-w-0">
-        <div className="truncate text-sm font-extrabold text-ink">{account.title}</div>
+    <div className="flex items-center justify-between gap-3 rounded-2xl bg-bg px-3 py-3">
+      <BankLogo account={account} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <div className="truncate text-sm font-extrabold text-ink">{account.title}</div>
+          <span className={`rounded-full px-2 py-0.5 text-[9px] font-extrabold ${accountKindTone(account.kind)}`}>{accountKindLabel(account.kind)}</span>
+          {account.defaultForExpense && <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[9px] font-extrabold text-orange">هزینه</span>}
+          {account.defaultForIncome && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-extrabold text-emerald-700">درآمد</span>}
+        </div>
+        <div className={`mt-1 text-xs font-extrabold ${balance < 0 ? "text-red-700" : "text-ink"}`}>مانده فعلی: {balance < 0 ? "-" : ""}{money(balance)}</div>
         <div className="text-[11px] text-muted">موجودی اولیه: {new Intl.NumberFormat("fa-IR").format(account.openingBalanceToman ?? 0)}</div>
+        <button
+          type="button"
+          onClick={onTransactions}
+          className="mt-2 rounded-xl bg-white px-3 py-1.5 text-[11px] font-extrabold text-navy-900 shadow-sm ring-1 ring-black/5 active:bg-slate-50"
+        >
+          تراکنش‌ها
+        </button>
       </div>
       <RowActions onEdit={onEdit} onDelete={onDelete} />
     </div>
@@ -536,37 +609,100 @@ export function CategoryModal({
 
 export function AccountModal({
   value,
+  txs,
   onChange,
   onClose,
   onSubmit,
 }: {
   value: Account;
+  txs?: Tx[];
   onChange: (value: Account) => void;
   onClose: () => void;
   onSubmit: () => void;
 }) {
-  const [balanceDraft, setBalanceDraft] = useState(String(value.openingBalanceToman ?? 0));
+  const movementBalance = accountBalance({ ...value, openingBalanceToman: 0 }, txs ?? []);
+  const [balanceDraft, setBalanceDraft] = useState(String((value.openingBalanceToman ?? 0) + movementBalance));
+  const enteredBalance = parseAmount(balanceDraft);
 
   return (
     <ModalShell onClose={onClose}>
       <ModalHeader title={value.id ? "ویرایش حساب" : "حساب جدید"} onClose={onClose} />
       <div className="space-y-3">
+        <div className="rounded-3xl bg-bg p-3 ring-1 ring-black/5">
+          <div className="flex items-center gap-3">
+            <BankLogo account={value} size="lg" />
+            <div className="min-w-0">
+              <div className="text-sm font-extrabold text-ink">{value.title || "حساب جدید"}</div>
+              <div className="mt-1 text-[11px] text-muted">{bankLabel(value.bankKey)} · {accountKindLabel(value.kind)}</div>
+            </div>
+          </div>
+        </div>
         <input
           value={value.title}
           onChange={(e) => onChange({ ...value, title: e.target.value })}
           placeholder="نام حساب"
           className="w-full rounded-2xl bg-bg px-3 py-3 text-sm ring-1 ring-black/5 outline-none focus:ring-navy-900/20"
         />
-        <input
-          value={balanceDraft}
-          onChange={(e) => {
-            setBalanceDraft(e.target.value);
-            onChange({ ...value, openingBalanceToman: parseAmount(e.target.value) });
-          }}
-          inputMode="numeric"
-          placeholder="موجودی اولیه"
-          className="w-full rounded-2xl bg-bg px-3 py-3 text-sm ring-1 ring-black/5 outline-none focus:ring-navy-900/20"
-        />
+        <select
+          value={value.bankKey ?? "generic"}
+          onChange={(event) => onChange({ ...value, bankKey: event.target.value })}
+          className="w-full rounded-2xl bg-bg px-3 py-3 text-sm font-bold text-ink ring-1 ring-black/5 outline-none"
+        >
+          {BANK_OPTIONS.map((bank) => (
+            <option key={bank.key} value={bank.key}>
+              {bank.label}
+            </option>
+          ))}
+        </select>
+        <div className="grid grid-cols-2 gap-2 rounded-2xl bg-bg p-1 text-xs">
+          {ACCOUNT_KIND_OPTIONS.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => onChange({ ...value, kind: option.key })}
+              className={`rounded-xl px-2 py-2 font-bold ${
+                (value.kind ?? "cash") === option.key ? option.tone : "text-ink hover:bg-white"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2 rounded-2xl bg-bg p-1 text-xs">
+          <button
+            type="button"
+            onClick={() => onChange({ ...value, defaultForExpense: !value.defaultForExpense })}
+            className={`rounded-xl px-2 py-2 font-bold ${value.defaultForExpense ? "bg-orange-soft text-orange" : "text-ink hover:bg-white"}`}
+          >
+            پیش‌فرض هزینه
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange({ ...value, defaultForIncome: !value.defaultForIncome })}
+            className={`rounded-xl px-2 py-2 font-bold ${value.defaultForIncome ? "bg-emerald-50 text-emerald-700" : "text-ink hover:bg-white"}`}
+          >
+            پیش‌فرض درآمد
+          </button>
+        </div>
+        <div className="rounded-2xl bg-orange-50 px-3 py-3 text-[11px] leading-6 text-orange-900">
+          <div className="font-extrabold">موجودی فعلی واقعی حساب</div>
+          <div className="mt-1 text-orange-900/75">اگر مانده بانک را می‌دانی، همین‌جا وارد کن. مانده اولیه به‌صورت خودکار تنظیم می‌شود تا مانده نهایی دقیقاً با آن برابر شود.</div>
+          <input
+            value={balanceDraft}
+            onChange={(e) => {
+              const nextBalance = parseAmount(e.target.value);
+              setBalanceDraft(e.target.value);
+              onChange({ ...value, openingBalanceToman: nextBalance - movementBalance });
+            }}
+            inputMode="numeric"
+            placeholder="مثلاً ۲٬۰۰۰٬۰۰۰"
+            className="mt-2 w-full rounded-xl bg-white px-3 py-2 text-sm text-ink ring-1 ring-orange-200 outline-none focus:ring-2 focus:ring-orange-300"
+          />
+          <div className="mt-2 flex items-center justify-between text-[10px] text-orange-900/70">
+            <span>گردش ثبت‌شده: {money(movementBalance)}</span>
+            <span>مانده اولیه جدید: {money(enteredBalance - movementBalance)}</span>
+          </div>
+        </div>
         <button onClick={onSubmit} className="w-full rounded-2xl bg-navy-900 px-4 py-3 text-sm font-extrabold text-white">
           ذخیره
         </button>

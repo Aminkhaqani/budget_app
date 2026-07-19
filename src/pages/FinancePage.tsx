@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { NavLink, useOutletContext } from "react-router-dom";
 import type { Account, Category, PlannedItem, Tx } from "../layout/Appshell";
+import { totalCashBalance } from "../lib/accounts";
 import {
   findGregorianForJalali,
   fullJalali,
@@ -61,15 +62,6 @@ function plannedDateForMonth(item: PlannedItem, year: number, month: number, max
   return findGregorianForJalali(year, month, Math.min(Math.max(1, item.dayOfMonth), maxDay));
 }
 
-function accountBalance(accounts: Account[], txs: Tx[]) {
-  const opening = accounts.reduce((sum, account) => sum + (account.openingBalanceToman ?? 0), 0);
-  return txs.reduce((sum, tx) => {
-    if (tx.type === "income") return sum + tx.amountToman;
-    if (tx.type === "expense") return sum - tx.amountToman;
-    return sum;
-  }, opening);
-}
-
 function buildForecast(currentCash: number, events: PlannedOccurrence[], scenarioAmount: number): ForecastPoint[] {
   let cash = currentCash;
   const rows: ForecastPoint[] = [
@@ -121,7 +113,7 @@ export default function FinancePage() {
     [txs, monthBounds.end, monthBounds.start]
   );
   const currentTxs = useMemo(() => txs.filter((tx) => tx.date <= today), [txs, today]);
-  const currentCash = useMemo(() => accountBalance(accounts, currentTxs), [accounts, currentTxs]);
+  const currentCash = useMemo(() => totalCashBalance(accounts, currentTxs), [accounts, currentTxs]);
 
   const categoryById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const reserve = parseAmount(reserveRaw);

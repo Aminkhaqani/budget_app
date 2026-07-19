@@ -1,5 +1,7 @@
 import { addDays, shortJalali, todayISO } from "../lib/date";
 import type { Account, Category, Tx } from "../layout/Appshell";
+import { BankLogo } from "./BankLogo";
+import { accountMovementLabel } from "../lib/accounts";
 
 const money = (n: number) => new Intl.NumberFormat("fa-IR").format(Math.abs(Math.round(n)));
 
@@ -43,10 +45,13 @@ function txView(
   tx: Tx,
   categories: Category[],
   accounts: Account[]
-): { icon: string; title: string; meta: string; amountTone: string; rowBg: string } {
+): { icon: string; title: string; meta: string; accountMeta: string; account?: Account; amountTone: string; rowBg: string } {
   const category = tx.categoryId ? categories.find((item) => item.id === tx.categoryId) : undefined;
   const fromAccount = tx.fromAccountId ? accounts.find((item) => item.id === tx.fromAccountId)?.title : undefined;
   const toAccount = tx.toAccountId ? accounts.find((item) => item.id === tx.toAccountId)?.title : undefined;
+  const displayAccount = tx.type === "income"
+    ? accounts.find((item) => item.id === tx.toAccountId)
+    : accounts.find((item) => item.id === tx.fromAccountId) ?? accounts.find((item) => item.id === tx.toAccountId);
   const transferTitle = fromAccount && toAccount ? `${fromAccount} ← ${toAccount}` : "جابجایی";
   const categoryTitle = category?.title ?? (tx.type === "income" ? "درآمد" : tx.type === "expense" ? "بدون دسته‌بندی" : transferTitle);
 
@@ -54,6 +59,8 @@ function txView(
     icon: category?.icon || fallbackIcon(tx.type),
     title: tx.note?.trim() || categoryTitle,
     meta: tx.type === "transfer" ? transferTitle : categoryTitle,
+    accountMeta: accountMovementLabel(tx, accounts),
+    account: displayAccount,
     amountTone: tx.type === "income" ? "text-emerald-700" : tx.type === "expense" ? "text-orangeExpense" : "text-transfer",
     rowBg: tx.type === "income" ? "bg-emerald-50/60" : tx.type === "expense" ? "bg-orange-50/70" : "bg-white",
   };
@@ -126,6 +133,10 @@ function TransactionCard({
         <span className="block truncate text-sm font-extrabold text-ink">{view.title}</span>
         <span className="mt-0.5 block truncate text-[10px] font-bold text-muted">
           {view.meta} · {typeLabel(tx.type)}
+        </span>
+        <span className="mt-1 inline-flex max-w-full items-center gap-1 rounded-full bg-white/65 px-2 py-0.5 text-[9px] font-extrabold text-slate-500 ring-1 ring-black/5">
+          <BankLogo account={view.account} size="sm" className="!h-4 !w-4 !rounded-md !text-[7px]" />
+          <span className="truncate">{view.accountMeta}</span>
         </span>
       </span>
 

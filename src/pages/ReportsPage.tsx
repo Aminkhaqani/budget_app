@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { PersianCalendar } from "../layout/Appshell";
 import type { Account, Category, Tx } from "../layout/Appshell";
+import { accountBalance } from "../lib/accounts";
 import {
   currentJalaliMonthBounds,
   currentJalaliYearBounds,
@@ -32,10 +33,18 @@ const jalaliMonthNames = ["فروردین", "اردیبهشت", "خرداد", "�
 
 export default function ReportsPage() {
   const { txs, categories, accounts, openEdit } = useOutletContext<Ctx>();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const monthBounds = currentJalaliMonthBounds();
   const [preset, setPreset] = useState<RangePreset>("month");
   const [from, setFrom] = useState(monthBounds.start);
   const [to, setTo] = useState(monthBounds.end);
+
+  useEffect(() => {
+    if (searchParams.get("section") !== "accounts") return;
+    const timer = window.setTimeout(() => document.getElementById("accounts-balances")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    return () => window.clearTimeout(timer);
+  }, [searchParams]);
 
   const categoryById = useMemo(() => new Map(categories.map((category) => [category.id, category.title])), [categories]);
   const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account.title])), [accounts]);
@@ -117,8 +126,8 @@ export default function ReportsPage() {
       نوع: tx.type === "income" ? "درآمد" : tx.type === "expense" ? "هزینه" : "جابجایی",
       مبلغ: tx.amountToman,
       دسته: tx.type === "transfer" ? "" : categoryTitle(tx.categoryId),
-      "از حساب": tx.type === "transfer" ? accountTitle(tx.fromAccountId) : "",
-      "به حساب": tx.type === "transfer" ? accountTitle(tx.toAccountId) : "",
+      "از حساب": tx.type === "expense" || tx.type === "transfer" ? accountTitle(tx.fromAccountId) : "",
+      "به حساب": tx.type === "income" || tx.type === "transfer" ? accountTitle(tx.toAccountId) : "",
       شرح: tx.note ?? "",
     }));
     const emptyRow = { تاریخ: "", "تاریخ کامل": "", "تاریخ میلادی": "", نوع: "", مبلغ: "", دسته: "", "از حساب": "", "به حساب": "", شرح: "" };
@@ -168,6 +177,12 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      <AccountsBalanceSection
+        accounts={accounts}
+        txs={txs}
+        onTransactions={(accountId) => navigate(`/transactions?account=${encodeURIComponent(accountId)}&period=month`)}
+      />
+
       <div className="grid grid-cols-3 gap-2">
         <SummaryCard title="درآمد" value={totals.income} tone="text-navy-900" />
         <SummaryCard title="هزینه" value={totals.expense} tone="text-orangeExpense" />
@@ -195,7 +210,7 @@ export default function ReportsPage() {
               >
                 <div className="min-w-0">
                   <div className="truncate text-sm font-extrabold text-ink">
-                    {tx.type === "transfer" ? `${accountTitle(tx.fromAccountId)} ← ${accountTitle(tx.toAccountId)}` : categoryTitle(tx.categoryId)}
+                    {tx.type === "transfer" ? `${accountTitle(tx.fromAccountId)} ← ${accountTitle(tx.toAccountId)}` : `${categoryTitle(tx.categoryId)} · ${tx.type === "income" ? accountTitle(tx.toAccountId) : accountTitle(tx.fromAccountId)}`}
                   </div>
                   <div className="truncate text-[11px] text-muted">{jalaliISODate(tx.date)} · {tx.note || fullJalali(tx.date)}</div>
                 </div>
@@ -208,6 +223,68 @@ export default function ReportsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AccountsBalanceSection({
+  accounts,
+  txs,
+  onTransactions,
+}: {
+  accounts: Account[];
+  txs: Tx[];
+  onTransactions: (accountId: string) => void;
+}) {
+  const groups: Array<{ key: NonNullable<Account["kind"]>; title: string; tone: string }> = [
+    { key: "cash", title: "حساب‌های نقدی", tone: "text-emerald-700" },
+    { key: "debt", title: "بدهی‌ها", tone: "text-red-700" },
+    { key: "receivable", title: "طلب‌ها", tone: "text-violet-700" },
+    { key: "investment", title: "سرمایه‌گذاری‌ها", tone: "text-blue-700" },
+  ];
+
+  return (
+    <section id="accounts-balances" className="scroll-mt-24 space-y-3">
+      <div className="flex items-end justify-between px-1">
+        <div>
+          <div className="text-sm font-extrabold text-ink">مانده حساب‌ها</div>
+          <div className="mt-1 text-[11px] text-muted">مانده بر اساس همه تراکنش‌های ثبت‌شده</div>
+        </div>
+      </div>
+      {groups.map((group) => {
+        const rows = accounts.filter((account) => (account.kind ?? "cash") === group.key);
+        if (!rows.length) return null;
+        const total = rows.reduce((sum, account) => sum + accountBalance(account, txs), 0);
+        return (
+          <div key={group.key} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-extrabold text-ink">{group.title}</div>
+              <div className={`text-sm font-extrabold ${group.tone}`}>{total < 0 ? "-" : ""}{money(total)}</div>
+            </div>
+            <div className="mt-3 space-y-2">
+              {rows.map((account) => {
+                const balance = accountBalance(account, txs);
+                return (
+                  <button
+                    key={account.id}
+                    type="button"
+                    onClick={() => onTransactions(account.id)}
+                    className="flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl bg-bg px-3 py-2 text-right transition hover:bg-slate-100 active:scale-[0.99]"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-extrabold text-ink">{account.title}</div>
+                      <div className="mt-1 text-[10px] text-muted">مشاهده تراکنش‌ها</div>
+                    </div>
+                    <div className={`shrink-0 text-sm font-extrabold ${balance < 0 ? "text-red-700" : "text-ink"}`}>
+                      {balance < 0 ? "-" : ""}{money(balance)}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </section>
   );
 }
 

@@ -15,6 +15,7 @@ import {
   todayISO,
 } from "../lib/date";
 import { initialAccounts, initialCategories, initialLoanInstallments, initialLoans, initialPlannedItems, initialTransactions } from "../data/initialData";
+import { defaultExpenseAccount, defaultIncomeAccount } from "../lib/accounts";
 import {
   deleteRemoteAccount,
   deleteRemoteCategory,
@@ -68,6 +69,10 @@ const newAccountDraft = (): Account => ({
   id: `a_${crypto.randomUUID()}`,
   title: "",
   openingBalanceToman: 0,
+  bankKey: "generic",
+  color: "#64748b",
+  defaultForExpense: false,
+  defaultForIncome: false,
 });
 
 type TxType = "income" | "expense" | "transfer";
@@ -99,7 +104,12 @@ export type Category = {
 export type Account = {
   id: string;
   title: string;
+  kind?: "cash" | "investment" | "debt" | "receivable";
   openingBalanceToman?: number;
+  bankKey?: string;
+  color?: string;
+  defaultForExpense?: boolean;
+  defaultForIncome?: boolean;
 };
 
 export type PlannedItem = {
@@ -120,6 +130,7 @@ export type Loan = {
   lender?: string;
   principalToman: number;
   receivedDate: string;
+  receivedAccountId?: string;
   active: boolean;
   note?: string;
 };
@@ -1079,22 +1090,36 @@ export default function Appshell() {
   };
 
   const saveAccount = (account: Account) => {
-    setAccounts((prev) => {
-      const exists = prev.some((a) => a.id === account.id);
-      return exists ? prev.map((a) => (a.id === account.id ? account : a)) : [...prev, account];
-    });
-    persistRemote(saveRemoteAccount(account));
+    const nextAccount = {
+      ...account,
+      title: account.title.trim(),
+      openingBalanceToman: Number(account.openingBalanceToman) || 0,
+      kind: account.kind ?? "cash",
+      bankKey: account.bankKey || "generic",
+      defaultForExpense: !!account.defaultForExpense,
+      defaultForIncome: !!account.defaultForIncome,
+    };
+    const merged = accounts.some((a) => a.id === nextAccount.id)
+      ? accounts.map((a) => (a.id === nextAccount.id ? nextAccount : a))
+      : [...accounts, nextAccount];
+    const nextAccounts = merged.map((item) => ({
+      ...item,
+      defaultForExpense: nextAccount.defaultForExpense && item.id !== nextAccount.id ? false : !!item.defaultForExpense,
+      defaultForIncome: nextAccount.defaultForIncome && item.id !== nextAccount.id ? false : !!item.defaultForIncome,
+    }));
+    setAccounts(nextAccounts);
+    nextAccounts
+      .filter((item) => item.id === nextAccount.id || item.defaultForExpense !== accounts.find((a) => a.id === item.id)?.defaultForExpense || item.defaultForIncome !== accounts.find((a) => a.id === item.id)?.defaultForIncome)
+      .forEach((item) => persistRemote(saveRemoteAccount(item)));
   };
 
   const deleteAccount = (id: string) => {
     setAccounts((prev) => prev.filter((a) => a.id !== id));
-    setTxs((prev) =>
-      prev.map((t) => ({
+    setTxs((prev) => prev.map((t) => ({
         ...t,
         fromAccountId: t.fromAccountId === id ? undefined : t.fromAccountId,
         toAccountId: t.toAccountId === id ? undefined : t.toAccountId,
-      }))
-    );
+      })));
     persistRemote(deleteRemoteAccount(id));
   };
 
@@ -1142,6 +1167,27 @@ export default function Appshell() {
     installments.forEach((installment) => persistRemote(saveRemoteLoanInstallment(installment)));
   };
 
+  const saveLoanReceipt = (loan: Loan, installments: LoanInstallment[], destinationAccountId: string) => {
+    const loanAccount: Account = {
+      id: `loan_account_${loan.id}`,
+      title: `تسهیلات · ${loan.title}`,
+      kind: "debt",
+      openingBalanceToman: 0,
+      bankKey: "generic",
+      color: "#7c3aed",
+    };
+    saveAccount(loanAccount);
+    saveLoanWithInstallments(loan, installments);
+    upsertTx({
+      type: "transfer",
+      amountToman: loan.principalToman,
+      date: loan.receivedDate,
+      fromAccountId: loanAccount.id,
+      toAccountId: destinationAccountId,
+      note: `دریافت تسهیلات · ${loan.title}`,
+    });
+  };
+
   const deleteLoanInstallment = (id: string) => {
     setLoanInstallments((prev) => prev.filter((item) => item.id !== id));
     persistRemote(deleteRemoteLoanInstallment(id));
@@ -1179,6 +1225,7 @@ export default function Appshell() {
               deleteLoan,
               saveLoanInstallment,
               saveLoanWithInstallments,
+              saveLoanReceipt,
               deleteLoanInstallment,
             }}
           />
@@ -1240,8 +1287,9 @@ function AddTransactionModal({
   const [note, setNote] = useState<string>(initialTx?.note ?? "");
 
   const [categoryId, setCategoryId] = useState<string>(initialTx?.categoryId ?? "");
-  const [fromAccountId, setFromAccountId] = useState<string>(initialTx?.fromAccountId ?? "");
-  const [toAccountId, setToAccountId] = useState<string>(initialTx?.toAccountId ?? "");
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  const [fromAccountId, setFromAccountId] = useState<string>(initialTx?.fromAccountId ?? (!initialTx ? defaultExpenseAccount(accounts)?.id ?? "" : ""));
+  const [toAccountId, setToAccountId] = useState<string>(initialTx?.toAccountId ?? (!initialTx ? defaultIncomeAccount(accounts)?.id ?? "" : ""));
   const [categoryDraft, setCategoryDraft] = useState<Category | null>(null);
   const [accountDraft, setAccountDraft] = useState<Account | null>(null);
   const [accountTarget, setAccountTarget] = useState<"from" | "to" | null>(null);
@@ -1259,11 +1307,20 @@ function AddTransactionModal({
   const catsOfType = categories.filter((c) => c.type === (type === "income" ? "income" : "expense"));
   const popular3 = catsOfType.filter((c) => c.popular).slice(0, 3);
 
+  useEffect(() => {
+    if (type === "expense" && !fromAccountId) setFromAccountId(defaultExpenseAccount(accounts)?.id ?? "");
+    if (type === "income" && !toAccountId) setToAccountId(defaultIncomeAccount(accounts)?.id ?? "");
+    if (type === "transfer") {
+      if (!fromAccountId) setFromAccountId(defaultExpenseAccount(accounts)?.id ?? "");
+      if (!toAccountId) setToAccountId(accounts.find((account) => account.id !== fromAccountId)?.id ?? "");
+    }
+  }, [accounts, fromAccountId, toAccountId, type]);
+
   const canSubmit =
     validAmount &&
     (type === "transfer"
       ? fromAccountId && toAccountId && fromAccountId !== toAccountId
-      : !!categoryId);
+      : !!categoryId && (type === "income" ? !!toAccountId : !!fromAccountId));
 
   const amountWords = validAmount ? toPersianWordsToman(amountToman) : "";
 
@@ -1287,12 +1344,15 @@ function AddTransactionModal({
       amountToman,
       date,
       categoryId,
+      fromAccountId: type === "expense" ? fromAccountId : undefined,
+      toAccountId: type === "income" ? toAccountId : undefined,
       note: note.trim() || undefined,
     });
   };
 
   const openCategoryForm = (id?: string) => {
     const existing = id ? categories.find((category) => category.id === id) : undefined;
+    setCategoryPickerOpen(false);
     setCategoryDraft(existing ?? newCategoryDraft(type === "income" ? "income" : "expense"));
   };
 
@@ -1320,6 +1380,11 @@ function AddTransactionModal({
       ...accountDraft,
       title: accountDraft.title.trim(),
       openingBalanceToman: Number(accountDraft.openingBalanceToman) || 0,
+      kind: accountDraft.kind ?? "cash",
+      bankKey: accountDraft.bankKey || "generic",
+      color: accountDraft.color,
+      defaultForExpense: !!accountDraft.defaultForExpense,
+      defaultForIncome: !!accountDraft.defaultForIncome,
     };
     onSaveAccount(next);
     if (accountTarget === "to") setToAccountId(next.id);
@@ -1447,16 +1512,17 @@ function AddTransactionModal({
 
               {type !== "transfer" ? (
                 <div className="space-y-2">
-                  <Dropdown
-                    placeholder="دسته‌بندی"
-                    valueId={categoryId}
-                    valueLabel={catsOfType.find((c) => c.id === categoryId)?.title || ""}
-                    items={catsOfType.map((c) => ({ id: c.id, label: `${c.icon ?? ""} ${c.title}`.trim() }))}
-                    onChange={(id) => setCategoryId(id)}
-                    onEdit={openCategoryForm}
-                    onAdd={() => openCategoryForm()}
-                    addLabel="افزودن دسته‌بندی"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setCategoryPickerOpen(true)}
+                    className="flex min-h-12 w-full items-center justify-between rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
+                  >
+                    <span className={`flex min-w-0 items-center gap-2 text-sm ${categoryId ? "font-extrabold text-ink" : "text-muted"}`}>
+                      {categoryId && <span className="text-lg">{catsOfType.find((c) => c.id === categoryId)?.icon || "•"}</span>}
+                      <span className="truncate">{catsOfType.find((c) => c.id === categoryId)?.title || "انتخاب دسته‌بندی"}</span>
+                    </span>
+                    <span className="shrink-0 text-xs font-bold text-navy-900">انتخاب</span>
+                  </button>
 
                   <div className="flex flex-wrap gap-2 pt-1">
                     {popular3.map((c) => (
@@ -1470,6 +1536,17 @@ function AddTransactionModal({
                       </button>
                     ))}
                   </div>
+
+                  <Dropdown
+                    placeholder={type === "income" ? "دریافت در حساب" : "پرداخت از حساب"}
+                    valueId={type === "income" ? toAccountId : fromAccountId}
+                    valueLabel={accounts.find((a) => a.id === (type === "income" ? toAccountId : fromAccountId))?.title || ""}
+                    items={accounts.map((a) => ({ id: a.id, label: a.title }))}
+                    onChange={(id) => (type === "income" ? setToAccountId(id) : setFromAccountId(id))}
+                    onEdit={(id) => openAccountForm(id, type === "income" ? "to" : "from")}
+                    onAdd={() => openAccountForm(undefined, type === "income" ? "to" : "from")}
+                    addLabel="افزودن حساب"
+                  />
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1526,6 +1603,20 @@ function AddTransactionModal({
         />
       )}
 
+      {categoryPickerOpen && (
+        <CategoryPicker
+          categories={catsOfType}
+          selectedId={categoryId}
+          onClose={() => setCategoryPickerOpen(false)}
+          onSelect={(id) => {
+            setCategoryId(id);
+            setCategoryPickerOpen(false);
+          }}
+          onEdit={openCategoryForm}
+          onAdd={() => openCategoryForm()}
+        />
+      )}
+
       {accountDraft && (
         <AccountModal
           value={accountDraft}
@@ -1537,6 +1628,141 @@ function AddTransactionModal({
           onSubmit={submitAccountDraft}
         />
       )}
+    </div>
+  );
+}
+
+function CategoryPicker({
+  categories,
+  selectedId,
+  onClose,
+  onSelect,
+  onEdit,
+  onAdd,
+}: {
+  categories: Category[];
+  selectedId: string;
+  onClose: () => void;
+  onSelect: (id: string) => void;
+  onEdit: (id: string) => void;
+  onAdd: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => searchRef.current?.focus(), 150);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const normalizedQuery = query.trim().toLocaleLowerCase("fa");
+  const filtered = categories.filter((category) =>
+    category.title.toLocaleLowerCase("fa").includes(normalizedQuery),
+  );
+  const ordered = [...filtered].sort((a, b) => Number(b.popular) - Number(a.popular));
+
+  return (
+    <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label="انتخاب دسته‌بندی">
+      <button className="absolute inset-0 bg-black/45" onClick={onClose} aria-label="بستن انتخاب دسته‌بندی" />
+
+      <div className="absolute inset-x-0 bottom-0 flex max-h-[82dvh] min-h-[68dvh] flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-x-4 sm:bottom-4 sm:mx-auto sm:max-w-[520px] sm:rounded-3xl lg:inset-0 lg:m-auto lg:h-[min(720px,82vh)] lg:min-h-0">
+        <div className="shrink-0 border-b border-slate-100 px-4 pb-3 pt-3">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="text-base font-extrabold text-ink">انتخاب دسته‌بندی</div>
+              <div className="mt-0.5 text-[11px] text-muted">{categories.length.toLocaleString("fa-IR")} دسته‌بندی</div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="grid h-10 w-10 place-items-center rounded-xl bg-bg text-lg text-muted hover:bg-slate-200"
+              aria-label="بستن"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-2xl bg-bg px-3 ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-navy-900/20">
+            <span className="text-muted" aria-hidden="true">⌕</span>
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="h-12 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
+              type="search"
+              inputMode="search"
+              placeholder="جست‌وجوی دسته‌بندی"
+            />
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3">
+          {ordered.length ? (
+            <div className="space-y-1">
+              {ordered.map((category) => {
+                const selected = category.id === selectedId;
+                return (
+                  <div
+                    key={category.id}
+                    className={`flex min-h-14 items-center gap-2 rounded-2xl px-2 transition-colors ${
+                      selected ? "bg-orange-50 ring-1 ring-orangeExpense/20" : "hover:bg-bg"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onSelect(category.id)}
+                      className="flex min-w-0 flex-1 items-center gap-3 px-1 py-2 text-right"
+                    >
+                      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-xl ${selected ? "bg-white" : "bg-bg"}`}>
+                        {category.icon || "•"}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-extrabold text-ink">{category.title}</span>
+                        {category.popular && <span className="mt-0.5 block text-[10px] text-muted">پرکاربرد</span>}
+                      </span>
+                      {selected && <span className="shrink-0 text-sm font-extrabold text-orangeExpense">✓</span>}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onEdit(category.id)}
+                      className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-navy-900 hover:bg-white"
+                      aria-label={`ویرایش ${category.title}`}
+                      title="ویرایش"
+                    >
+                      ✎
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid h-full min-h-40 place-items-center px-6 text-center">
+              <div>
+                <div className="font-extrabold text-ink">دسته‌بندی پیدا نشد</div>
+                <div className="mt-1 text-xs text-muted">نام دیگری جست‌وجو کن یا دسته‌بندی تازه بساز.</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="shrink-0 border-t border-slate-100 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:rounded-b-3xl">
+          <button
+            type="button"
+            onClick={onAdd}
+            className="h-12 w-full rounded-2xl bg-navy-900 px-4 text-sm font-extrabold text-white hover:bg-navy-700 active:bg-navy-900"
+          >
+            + افزودن دسته‌بندی جدید
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

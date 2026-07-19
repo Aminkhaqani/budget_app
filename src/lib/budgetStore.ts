@@ -76,6 +76,11 @@ type AccountRow = {
   id: string;
   title: string;
   opening_balance_toman: number;
+  account_kind?: Account["kind"] | null;
+  bank_key?: string | null;
+  color?: string | null;
+  default_for_expense?: boolean | null;
+  default_for_income?: boolean | null;
 };
 
 type TxRow = {
@@ -401,12 +406,28 @@ const toAccountRow = (account: Account): AccountRow => ({
   id: account.id,
   title: account.title,
   opening_balance_toman: account.openingBalanceToman ?? 0,
+  account_kind: account.kind ?? "cash",
+  bank_key: account.bankKey ?? null,
+  color: account.color ?? null,
+  default_for_expense: account.defaultForExpense ?? false,
+  default_for_income: account.defaultForIncome ?? false,
+});
+
+const toBasicAccountRow = (account: Account) => ({
+  id: account.id,
+  title: account.title,
+  opening_balance_toman: account.openingBalanceToman ?? 0,
 });
 
 const fromAccountRow = (row: AccountRow): Account => ({
   id: row.id,
   title: row.title,
   openingBalanceToman: row.opening_balance_toman,
+  kind: row.account_kind ?? "cash",
+  bankKey: row.bank_key ?? undefined,
+  color: row.color ?? undefined,
+  defaultForExpense: !!row.default_for_expense,
+  defaultForIncome: !!row.default_for_income,
 });
 
 const toTxRow = (tx: Tx): TxRow => ({
@@ -432,6 +453,34 @@ const fromTxRow = (row: TxRow): Tx => ({
   toAccountId: row.to_account_id ?? undefined,
   note: row.note ?? undefined,
 });
+
+const isMissingAccountMetadataError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /account_kind|bank_key|color|default_for_expense|default_for_income/i.test(message);
+};
+
+const saveAccountRow = async (account: Account) => {
+  if (!supabase) return;
+  const { error } = await supabase.from("accounts").upsert(toAccountRow(account));
+  if (!error) return;
+
+  if (!isMissingAccountMetadataError(error)) throw error;
+
+  const fallback = await supabase.from("accounts").upsert(toBasicAccountRow(account));
+  if (fallback.error) throw fallback.error;
+};
+
+const loadAccountRows = async () => {
+  if (!supabase) return { data: [], error: null };
+  const result = await supabase
+    .from("accounts")
+    .select("id,title,opening_balance_toman,account_kind,bank_key,color,default_for_expense,default_for_income")
+    .order("title");
+
+  if (!result.error || !isMissingAccountMetadataError(result.error)) return result;
+
+  return supabase.from("accounts").select("id,title,opening_balance_toman").order("title");
+};
 
 const toPlannedItemRow = (plannedItem: PlannedItem): PlannedItemRow => ({
   id: plannedItem.id,
@@ -609,11 +658,20 @@ async function runOperation(operation: RemoteOperation) {
   }
 
   if (operation.type === "saveAccount") {
-    const { error } = await supabase.from("accounts").upsert(toAccountRow(operation.account));
-    if (error) throw error;
+    await saveAccountRow(operation.account);
   }
 
   if (operation.type === "deleteAccount") {
+    const clearFromReferences = await supabase
+      .from("transactions")
+      .update({ from_account_id: null })
+      .eq("from_account_id", operation.accountId);
+    if (clearFromReferences.error) throw clearFromReferences.error;
+    const clearToReferences = await supabase
+      .from("transactions")
+      .update({ to_account_id: null })
+      .eq("to_account_id", operation.accountId);
+    if (clearToReferences.error) throw clearToReferences.error;
     const { error } = await supabase.from("accounts").delete().eq("id", operation.accountId);
     if (error) throw error;
   }
@@ -697,7 +755,7 @@ export async function syncBudgetData() {
 
     const [categoriesResult, accountsResult, txsResult, plannedItemsResult, loansResult, loanInstallmentsResult] = await Promise.all([
       supabase.from("categories").select("id,type,title,icon,popular").order("type").order("title"),
-      supabase.from("accounts").select("id,title,opening_balance_toman").order("title"),
+      loadAccountRows(),
       supabase
         .from("transactions")
         .select("id,type,amount_toman,date,created_at,category_id,from_account_id,to_account_id,note")

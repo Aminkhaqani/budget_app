@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import { TransactionGroups } from "../components/TransactionCards";
 import type { Tx, Category, Account } from "../layout/Appshell";
+import { totalCashBalance } from "../lib/accounts";
 import {
   addDays,
   currentJalaliMonthBounds,
@@ -51,6 +52,7 @@ function arrow(deltaPct: number) {
 
 export default function DashboardPage() {
   const { txs, categories, accounts, openEdit } = useOutletContext<Ctx>();
+  const navigate = useNavigate();
   const [period, setPeriod] = useState<Period>("month");
 
   const periodBounds = useMemo(() => currentPeriodBounds(period), [period]);
@@ -81,6 +83,7 @@ export default function DashboardPage() {
 
   const incomeDeltaPct = incomePrev === 0 ? 0 : (income - incomePrev) / incomePrev;
   const expenseDeltaPct = expensePrev === 0 ? 0 : (expense - expensePrev) / expensePrev;
+  const cashBalance = useMemo(() => totalCashBalance(accounts, txs.filter((tx) => tx.date <= todayISO())), [accounts, txs]);
 
   return (
     <div className="min-h-screen bg-bg pt-4 sm:pt-6">
@@ -100,8 +103,32 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3">
-          <KpiCard variant="income" title="درآمد" value={income} prevValue={incomePrev} deltaPct={incomeDeltaPct} upGood />
-          <KpiCard variant="expense" title="هزینه" value={expense} prevValue={expensePrev} deltaPct={expenseDeltaPct} upGood={false} />
+          <button
+            type="button"
+            onClick={() => navigate("/reports?section=accounts")}
+            className="col-span-2 rounded-2xl bg-white/10 px-4 py-3 text-right text-white ring-1 ring-white/10 transition hover:bg-white/15 active:scale-[0.99] active:bg-white/15"
+          >
+            <div className="text-xs text-white/65">مانده نقد حساب‌ها</div>
+            <div className="mt-1 text-2xl font-extrabold">{cashBalance < 0 ? "-" : ""}{money(cashBalance)}</div>
+          </button>
+          <KpiCard
+            variant="income"
+            title="درآمد"
+            value={income}
+            prevValue={incomePrev}
+            deltaPct={incomeDeltaPct}
+            upGood
+            onClick={() => navigate(`/transactions?type=income&period=${period}`)}
+          />
+          <KpiCard
+            variant="expense"
+            title="هزینه"
+            value={expense}
+            prevValue={expensePrev}
+            deltaPct={expenseDeltaPct}
+            upGood={false}
+            onClick={() => navigate(`/transactions?type=expense&period=${period}`)}
+          />
         </div>
       </div>
 
@@ -123,6 +150,7 @@ function KpiCard({
   prevValue,
   deltaPct,
   upGood,
+  onClick,
 }: {
   variant: "income" | "expense";
   title: string;
@@ -130,6 +158,7 @@ function KpiCard({
   prevValue: number;
   deltaPct: number;
   upGood: boolean;
+  onClick: () => void;
 }) {
   const isUp = deltaPct >= 0;
   const good = upGood ? isUp : !isUp;
@@ -140,7 +169,11 @@ function KpiCard({
   const valueTone = variant === "income" ? "text-navy-900" : "text-orangeExpense";
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+    <button
+      type="button"
+      onClick={onClick}
+      className="overflow-hidden rounded-2xl bg-white text-right shadow-sm ring-1 ring-black/5 transition hover:brightness-[0.98] active:scale-[0.99]"
+    >
       <div className={`px-4 py-3 ${headerTint}`}>
         <div className="text-xs text-muted">{title}</div>
         <div className={`mt-1 text-xl font-extrabold ${valueTone}`}>{money(value)}</div>
@@ -156,6 +189,6 @@ function KpiCard({
           </div>
         </div>
       </div>
-    </div>
+    </button>
   );
 }

@@ -1,9 +1,19 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import { TransactionGroups } from "../components/TransactionCards";
 import type { Tx, Account, Category } from "../layout/Appshell";
-import { fullJalali, jalaliISODate, normalizeDigits } from "../lib/date";
+import {
+  currentJalaliMonthBounds,
+  currentJalaliYearBounds,
+  findGregorianForJalali,
+  fullJalali,
+  isBetweenISO,
+  jalaliISODate,
+  jalaliParts,
+  normalizeDigits,
+  todayISO,
+} from "../lib/date";
 
 type Ctx = {
   txs: Tx[];
@@ -13,6 +23,7 @@ type Ctx = {
 };
 
 type Filter = "all" | "income" | "expense" | "transfer";
+type PeriodFilter = "all" | "month" | "quarter" | "year";
 
 const money = (value: number) => new Intl.NumberFormat("fa-IR").format(Math.abs(Math.round(value)));
 
@@ -22,16 +33,61 @@ function normalizeSearch(value: string) {
 
 export default function TransactionsPage() {
   const { txs, accounts, categories, openEdit } = useOutletContext<Ctx>();
-  const [filter, setFilter] = useState<Filter>("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialType = searchParams.get("type");
+  const initialPeriod = searchParams.get("period");
+  const [filter, setFilter] = useState<Filter>(
+    initialType === "income" || initialType === "expense" || initialType === "transfer" ? initialType : "all"
+  );
+  const [period, setPeriod] = useState<PeriodFilter>(
+    initialPeriod === "month" || initialPeriod === "quarter" || initialPeriod === "year" ? initialPeriod : "all"
+  );
   const [query, setQuery] = useState("");
+  const accountId = searchParams.get("account") || "";
 
   const categoryById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
+  const account = accountId ? accountById.get(accountId) : undefined;
+  const periodBounds = useMemo(() => {
+    if (period === "month") return currentJalaliMonthBounds();
+    if (period === "year") return currentJalaliYearBounds();
+    if (period === "quarter") {
+      const today = todayISO();
+      const parts = jalaliParts(today);
+      const quarterStartMonth = Math.floor((parts.month - 1) / 3) * 3 + 1;
+      return { start: findGregorianForJalali(parts.year, quarterStartMonth, 1), end: today };
+    }
+    return null;
+  }, [period]);
+
+  const updateType = (next: Filter) => {
+    setFilter(next);
+    const params = new URLSearchParams(searchParams);
+    if (next === "all") params.delete("type");
+    else params.set("type", next);
+    setSearchParams(params, { replace: true });
+  };
+
+  const updatePeriod = (next: PeriodFilter) => {
+    setPeriod(next);
+    const params = new URLSearchParams(searchParams);
+    if (next === "all") params.delete("period");
+    else params.set("period", next);
+    setSearchParams(params, { replace: true });
+  };
+
+  const clearAccount = () => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("account");
+    setSearchParams(params, { replace: true });
+  };
 
   const list = useMemo(() => {
     const normalizedQuery = normalizeSearch(query);
     return txs.filter((tx) => {
       if (filter !== "all" && tx.type !== filter) return false;
+      if (periodBounds && !isBetweenISO(tx.date, periodBounds.start, periodBounds.end)) return false;
+      if (accountId && tx.fromAccountId !== accountId && tx.toAccountId !== accountId) return false;
       if (!normalizedQuery) return true;
 
       const category = tx.categoryId ? categoryById.get(tx.categoryId) : undefined;
@@ -56,7 +112,7 @@ export default function TransactionsPage() {
       );
       return haystack.includes(normalizedQuery);
     });
-  }, [accountById, categoryById, filter, query, txs]);
+  }, [accountById, accountId, categoryById, filter, periodBounds, query, txs]);
 
   return (
     <div className="space-y-4 pb-4">
@@ -65,12 +121,31 @@ export default function TransactionsPage() {
           <div className="text-sm font-semibold">تراکنش‌ها</div>
 
           <div className="grid grid-cols-4 gap-1 rounded-2xl bg-white p-1 text-xs ring-1 ring-black/5">
-            <Chip active={filter === "all"} onClick={() => setFilter("all")}>همه</Chip>
-            <Chip active={filter === "income"} onClick={() => setFilter("income")}>درآمد</Chip>
-            <Chip active={filter === "expense"} onClick={() => setFilter("expense")}>هزینه</Chip>
-            <Chip active={filter === "transfer"} onClick={() => setFilter("transfer")}>جابجایی</Chip>
+            <Chip active={filter === "all"} onClick={() => updateType("all")}>همه</Chip>
+            <Chip active={filter === "income"} onClick={() => updateType("income")}>درآمد</Chip>
+            <Chip active={filter === "expense"} onClick={() => updateType("expense")}>هزینه</Chip>
+            <Chip active={filter === "transfer"} onClick={() => updateType("transfer")}>جابجایی</Chip>
           </div>
         </div>
+
+        <div className="mt-3 grid grid-cols-4 gap-1 rounded-2xl bg-white p-1 text-xs ring-1 ring-black/5">
+          <Chip active={period === "all"} onClick={() => updatePeriod("all")}>همه</Chip>
+          <Chip active={period === "month"} onClick={() => updatePeriod("month")}>ماه</Chip>
+          <Chip active={period === "quarter"} onClick={() => updatePeriod("quarter")}>فصل</Chip>
+          <Chip active={period === "year"} onClick={() => updatePeriod("year")}>سال</Chip>
+        </div>
+
+        {account && (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-navy-900 px-3 py-2 text-white">
+            <div className="min-w-0">
+              <div className="text-[10px] text-white/60">حساب</div>
+              <div className="truncate text-xs font-extrabold">{account.title}</div>
+            </div>
+            <button type="button" onClick={clearAccount} className="rounded-xl bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white">
+              حذف فیلتر
+            </button>
+          </div>
+        )}
 
         <label className="mt-3 flex items-center gap-2 rounded-2xl bg-white px-3 py-2 ring-1 ring-black/5">
           <span className="text-sm text-muted">⌕</span>

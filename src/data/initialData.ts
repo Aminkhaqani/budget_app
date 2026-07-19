@@ -23,6 +23,10 @@ export const initialCategories: Category[] = [
 ];
 
 export const initialAccounts: Account[] = [
+  { id: "a_pasargad", title: "پاسارگاد", kind: "cash", bankKey: "pasargad", color: "#0b1b3a", openingBalanceToman: 0, defaultForExpense: true },
+  { id: "a_blu", title: "بلوبانک", kind: "cash", bankKey: "blu", color: "#16a3ff", openingBalanceToman: 0 },
+  { id: "a_saman", title: "سامان", kind: "cash", bankKey: "saman", color: "#0a55a0", openingBalanceToman: 0 },
+  { id: "a_melli", title: "ملی", kind: "cash", bankKey: "melli", color: "#d71920", openingBalanceToman: 0 },
   { id: "a_main", title: "حساب اصلی" },
   { id: "a_cash", title: "نقدی" },
   { id: "a_bank", title: "کارت بانکی" },
