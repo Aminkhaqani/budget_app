@@ -189,37 +189,42 @@ export default function ReportsPage() {
         <SummaryCard title="مانده" value={totals.income - totals.expense} tone="text-ink" signed />
       </div>
 
-      <PieChart title="هزینه‌ها" total={totals.expense} slices={expenseSlices} emptyText="هزینه‌ای در این بازه نیست." />
-      <PieChart title="درآمدها" total={totals.income} slices={incomeSlices} emptyText="درآمدی در این بازه نیست." />
-      <MonthlyBarChart rows={monthlySeries} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <PieChart title="هزینه‌ها" total={totals.expense} slices={expenseSlices} emptyText="هزینه‌ای در این بازه نیست." />
+        <PieChart title="درآمدها" total={totals.income} slices={incomeSlices} emptyText="درآمدی در این بازه نیست." />
+      </div>
 
-      <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-        <div className="text-sm font-extrabold text-ink">تراکنش‌های بازه</div>
-        <div className="mt-3 space-y-2">
-          {filteredTxs.length === 0 ? (
-            <div className="text-xs text-muted">تراکنشی برای این بازه ثبت نشده است.</div>
-          ) : (
-            filteredTxs.map((tx) => (
-              <button
-                key={tx.id}
-                type="button"
-                onClick={() => openEdit(tx.id)}
-                className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 text-right ring-1 ring-black/5 hover:brightness-[0.98] active:brightness-[0.97] ${
-                  tx.type === "income" ? "bg-emerald-50/70" : tx.type === "expense" ? "bg-orange-50/70" : "bg-bg"
-                }`}
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-extrabold text-ink">
-                    {tx.type === "transfer" ? `${accountTitle(tx.fromAccountId)} ← ${accountTitle(tx.toAccountId)}` : `${categoryTitle(tx.categoryId)} · ${tx.type === "income" ? accountTitle(tx.toAccountId) : accountTitle(tx.fromAccountId)}`}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <MonthlyBarChart rows={monthlySeries} />
+
+        <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+          <div className="text-sm font-extrabold text-ink">تراکنش‌های بازه</div>
+          <div className="mt-3 space-y-2">
+            {filteredTxs.length === 0 ? (
+              <div className="text-xs text-muted">تراکنشی برای این بازه ثبت نشده است.</div>
+            ) : (
+              filteredTxs.map((tx) => (
+                <button
+                  key={tx.id}
+                  type="button"
+                  onClick={() => openEdit(tx.id)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 text-right ring-1 ring-black/5 hover:brightness-[0.98] active:brightness-[0.97] ${
+                    tx.type === "income" ? "bg-emerald-50/70" : tx.type === "expense" ? "bg-orange-50/70" : "bg-bg"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-extrabold text-ink">
+                      {tx.type === "transfer" ? `${accountTitle(tx.fromAccountId)} ← ${accountTitle(tx.toAccountId)}` : `${categoryTitle(tx.categoryId)} · ${tx.type === "income" ? accountTitle(tx.toAccountId) : accountTitle(tx.fromAccountId)}`}
+                    </div>
+                    <div className="truncate text-[11px] text-muted">{jalaliISODate(tx.date)} · {tx.note || fullJalali(tx.date)}</div>
                   </div>
-                  <div className="truncate text-[11px] text-muted">{jalaliISODate(tx.date)} · {tx.note || fullJalali(tx.date)}</div>
-                </div>
-                <div className={`shrink-0 text-sm font-extrabold ${tx.type === "income" ? "text-emerald-700" : tx.type === "expense" ? "text-orangeExpense" : "text-transfer"}`}>
-                  {money(tx.amountToman)}
-                </div>
-              </button>
-            ))
-          )}
+                  <div className={`shrink-0 text-sm font-extrabold ${tx.type === "income" ? "text-emerald-700" : tx.type === "expense" ? "text-orangeExpense" : "text-transfer"}`}>
+                    {money(tx.amountToman)}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
