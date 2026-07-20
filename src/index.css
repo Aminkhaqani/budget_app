@@ -10,7 +10,8 @@
   --bg:#F5F7FB;
   --ink:#0F172A;
   --muted:#64748B;
-  --transfer:#334155;
+  --transfer:#1E3A8A;
+  --expense:#991B1B;
   --orange-soft: #FFF1E6;
 }
 @layer base {
@@ -41,6 +42,7 @@
   .text-ink    { color: var(--ink); }
   .text-muted  { color: var(--muted); }
   .text-transfer { color: var(--transfer); }
+  .text-expense  { color: var(--expense); }
   .bg-app      { background-color: var(--bg); }
 
   .route-transition {
