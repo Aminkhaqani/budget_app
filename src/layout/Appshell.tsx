@@ -1240,6 +1240,7 @@ export default function Appshell() {
         <AddTransactionModal
           categories={categories}
           accounts={accounts}
+          txs={txs}
           initialTx={editingTx}
           onClose={() => {
             setAddOpen(false);
@@ -1264,6 +1265,7 @@ export default function Appshell() {
 function AddTransactionModal({
   categories,
   accounts,
+  txs,
   initialTx,
   onClose,
   onSubmit,
@@ -1273,6 +1275,7 @@ function AddTransactionModal({
 }: {
   categories: Category[];
   accounts: Account[];
+  txs: Tx[];
   initialTx: Tx | null;
   onClose: () => void;
   onSubmit: (tx: Omit<Tx, "id">) => void;
@@ -1285,6 +1288,7 @@ function AddTransactionModal({
   const [date, setDate] = useState<string>(initialTx?.date ?? todayISO());
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [note, setNote] = useState<string>(initialTx?.note ?? "");
+  const [notePickerOpen, setNotePickerOpen] = useState(false);
 
   const [categoryId, setCategoryId] = useState<string>(initialTx?.categoryId ?? "");
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
@@ -1306,6 +1310,18 @@ function AddTransactionModal({
 
   const catsOfType = categories.filter((c) => c.type === (type === "income" ? "income" : "expense"));
   const popular3 = catsOfType.filter((c) => c.popular).slice(0, 3);
+  const lastUsedByAccount = new Map<string, number>();
+  txs.forEach((transaction, index) => {
+    const usedAt = new Date(transaction.createdAt ?? `${transaction.date}T00:00:00`).getTime() + index;
+    [transaction.fromAccountId, transaction.toAccountId].forEach((accountId) => {
+      if (accountId) lastUsedByAccount.set(accountId, Math.max(lastUsedByAccount.get(accountId) ?? 0, usedAt));
+    });
+  });
+  const accountItems = accounts.map((account) => ({
+    id: account.id,
+    label: account.title,
+    lastUsed: lastUsedByAccount.get(account.id) ?? 0,
+  }));
 
   useEffect(() => {
     if (type === "expense" && !fromAccountId) setFromAccountId(defaultExpenseAccount(accounts)?.id ?? "");
@@ -1501,14 +1517,16 @@ function AddTransactionModal({
                 />
               )}
 
-              <input
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                type="text"
-                inputMode="text"
-                placeholder="شرح (اختیاری)"
-                className="w-full rounded-2xl bg-white px-4 py-3 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
-              />
+              <button
+                type="button"
+                onClick={() => setNotePickerOpen(true)}
+                className="flex min-h-12 w-full items-center justify-between rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
+              >
+                <span className={`min-w-0 truncate text-sm ${note ? "font-extrabold text-ink" : "text-muted"}`}>
+                  {note || "بابت / شرح (اختیاری)"}
+                </span>
+                <span className="shrink-0 text-xs font-bold text-navy-900">انتخاب</span>
+              </button>
 
               {type !== "transfer" ? (
                 <div className="space-y-2">
@@ -1541,7 +1559,7 @@ function AddTransactionModal({
                     placeholder={type === "income" ? "دریافت در حساب" : "پرداخت از حساب"}
                     valueId={type === "income" ? toAccountId : fromAccountId}
                     valueLabel={accounts.find((a) => a.id === (type === "income" ? toAccountId : fromAccountId))?.title || ""}
-                    items={accounts.map((a) => ({ id: a.id, label: a.title }))}
+                    items={accountItems}
                     onChange={(id) => (type === "income" ? setToAccountId(id) : setFromAccountId(id))}
                     onEdit={(id) => openAccountForm(id, type === "income" ? "to" : "from")}
                     onAdd={() => openAccountForm(undefined, type === "income" ? "to" : "from")}
@@ -1554,7 +1572,7 @@ function AddTransactionModal({
                     placeholder="پرداخت از"
                     valueId={fromAccountId}
                     valueLabel={accounts.find((a) => a.id === fromAccountId)?.title || ""}
-                    items={accounts.map((a) => ({ id: a.id, label: a.title }))}
+                    items={accountItems}
                     onChange={(id) => setFromAccountId(id)}
                     onEdit={(id) => openAccountForm(id, "from")}
                     onAdd={() => openAccountForm(undefined, "from")}
@@ -1565,7 +1583,7 @@ function AddTransactionModal({
                     placeholder="دریافت در"
                     valueId={toAccountId}
                     valueLabel={accounts.find((a) => a.id === toAccountId)?.title || ""}
-                    items={accounts.map((a) => ({ id: a.id, label: a.title }))}
+                    items={accountItems}
                     onChange={(id) => setToAccountId(id)}
                     onEdit={(id) => openAccountForm(id, "to")}
                     onAdd={() => openAccountForm(undefined, "to")}
@@ -1606,6 +1624,7 @@ function AddTransactionModal({
       {categoryPickerOpen && (
         <CategoryPicker
           categories={catsOfType}
+          transactions={txs.filter((transaction) => transaction.type === type)}
           selectedId={categoryId}
           onClose={() => setCategoryPickerOpen(false)}
           onSelect={(id) => {
@@ -1614,6 +1633,18 @@ function AddTransactionModal({
           }}
           onEdit={openCategoryForm}
           onAdd={() => openCategoryForm()}
+        />
+      )}
+
+      {notePickerOpen && (
+        <NotePicker
+          transactions={txs.filter((transaction) => transaction.type === type)}
+          value={note}
+          onClose={() => setNotePickerOpen(false)}
+          onSelect={(value) => {
+            setNote(value);
+            setNotePickerOpen(false);
+          }}
         />
       )}
 
@@ -1634,6 +1665,7 @@ function AddTransactionModal({
 
 function CategoryPicker({
   categories,
+  transactions,
   selectedId,
   onClose,
   onSelect,
@@ -1641,6 +1673,7 @@ function CategoryPicker({
   onAdd,
 }: {
   categories: Category[];
+  transactions: Tx[];
   selectedId: string;
   onClose: () => void;
   onSelect: (id: string) => void;
@@ -1667,7 +1700,21 @@ function CategoryPicker({
   const filtered = categories.filter((category) =>
     category.title.toLocaleLowerCase("fa").includes(normalizedQuery),
   );
-  const ordered = [...filtered].sort((a, b) => Number(b.popular) - Number(a.popular));
+  const lastUsedByCategory = new Map<string, number>();
+  transactions.forEach((transaction, index) => {
+    if (!transaction.categoryId) return;
+    const usedAt = new Date(transaction.createdAt ?? `${transaction.date}T00:00:00`).getTime() + index;
+    lastUsedByCategory.set(
+      transaction.categoryId,
+      Math.max(lastUsedByCategory.get(transaction.categoryId) ?? 0, usedAt),
+    );
+  });
+  const ordered = [...filtered].sort((a, b) => {
+    const recency = (lastUsedByCategory.get(b.id) ?? 0) - (lastUsedByCategory.get(a.id) ?? 0);
+    if (recency) return recency;
+    const popularity = Number(b.popular) - Number(a.popular);
+    return popularity || a.title.localeCompare(b.title, "fa");
+  });
 
   return (
     <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label="انتخاب دسته‌بندی">
@@ -1767,6 +1814,121 @@ function CategoryPicker({
   );
 }
 
+function NotePicker({
+  transactions,
+  value,
+  onClose,
+  onSelect,
+}: {
+  transactions: Tx[];
+  value: string;
+  onClose: () => void;
+  onSelect: (value: string) => void;
+}) {
+  const [query, setQuery] = useState(value);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const normalizedQuery = query.trim().toLocaleLowerCase("fa");
+  const lastUsedNotes = new Map<string, { label: string; usedAt: number }>();
+  transactions.forEach((transaction, index) => {
+    const label = transaction.note?.trim();
+    if (!label) return;
+    const key = label.toLocaleLowerCase("fa");
+    const usedAt = new Date(transaction.createdAt ?? `${transaction.date}T00:00:00`).getTime() + index;
+    const existing = lastUsedNotes.get(key);
+    if (!existing || usedAt > existing.usedAt) lastUsedNotes.set(key, { label, usedAt });
+  });
+  const suggestions = [...lastUsedNotes.values()]
+    .filter(({ label }) => label.toLocaleLowerCase("fa").includes(normalizedQuery))
+    .sort((a, b) => b.usedAt - a.usedAt);
+  const exactMatch = suggestions.some(
+    ({ label }) => label.toLocaleLowerCase("fa") === normalizedQuery,
+  );
+
+  return (
+    <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label="انتخاب بابت">
+      <button className="absolute inset-0 bg-black/45" onClick={onClose} aria-label="بستن انتخاب بابت" />
+
+      <div className="absolute inset-x-0 bottom-0 flex max-h-[82dvh] min-h-[68dvh] flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-x-4 sm:bottom-4 sm:mx-auto sm:max-w-[520px] sm:rounded-3xl lg:inset-0 lg:m-auto lg:h-[min(720px,82vh)] lg:min-h-0">
+        <div className="shrink-0 border-b border-slate-100 px-4 pb-3 pt-3">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="text-base font-extrabold text-ink">انتخاب بابت</div>
+              <div className="mt-0.5 text-[11px] text-muted">موارد استفاده‌شده اخیر بالاتر نمایش داده می‌شوند</div>
+            </div>
+            <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-xl bg-bg text-lg text-muted hover:bg-slate-200" aria-label="بستن">
+              ×
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-2xl bg-bg px-3 ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-navy-900/20">
+            <span className="text-muted" aria-hidden="true">⌕</span>
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && query.trim()) onSelect(query.trim());
+              }}
+              className="h-12 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
+              type="search"
+              inputMode="search"
+              placeholder="جست‌وجو یا نوشتن بابت جدید"
+            />
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3">
+          {query.trim() && !exactMatch && (
+            <button type="button" onClick={() => onSelect(query.trim())} className="mb-2 flex min-h-14 w-full items-center gap-3 rounded-2xl bg-orange-50 px-3 text-right ring-1 ring-orangeExpense/20">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-xl">＋</span>
+              <span className="min-w-0 flex-1 truncate text-sm font-extrabold text-ink">ثبت «{query.trim()}»</span>
+            </button>
+          )}
+          {suggestions.length ? (
+            <div className="space-y-1">
+              {suggestions.map(({ label }) => (
+                <button key={label} type="button" onClick={() => onSelect(label)} className={`flex min-h-14 w-full items-center gap-3 rounded-2xl px-3 text-right transition-colors ${label === value ? "bg-orange-50 ring-1 ring-orangeExpense/20" : "hover:bg-bg"}`}>
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-bg text-lg">≡</span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-extrabold text-ink">{label}</span>
+                  {label === value && <span className="shrink-0 text-sm font-extrabold text-orangeExpense">✓</span>}
+                </button>
+              ))}
+            </div>
+          ) : !query.trim() ? (
+            <div className="grid h-full min-h-40 place-items-center px-6 text-center text-sm text-muted">هنوز بابت قبلی برای این نوع تراکنش وجود ندارد.</div>
+          ) : null}
+        </div>
+
+        <div className="shrink-0 border-t border-slate-100 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:rounded-b-3xl">
+          <div className="flex gap-2">
+            {value && <button type="button" onClick={() => onSelect("")} className="h-12 rounded-2xl bg-bg px-4 text-sm font-extrabold text-ink hover:bg-slate-200">پاک کردن</button>}
+            <button type="button" onClick={() => query.trim() ? onSelect(query.trim()) : onClose()} className="h-12 flex-1 rounded-2xl bg-navy-900 px-4 text-sm font-extrabold text-white hover:bg-navy-700">
+              {query.trim() ? "انتخاب بابت" : "بستن"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SegBtn({
   active,
   onClick,
@@ -1801,29 +1963,42 @@ function Dropdown({
   placeholder: string;
   valueId: string;
   valueLabel: string;
-  items: { id: string; label: string }[];
+  items: { id: string; label: string; lastUsed?: number }[];
   onChange: (id: string) => void;
   onEdit: (id: string) => void;
   onAdd: () => void;
   addLabel: string;
 }) {
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (!wrapRef.current) return;
-      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+    if (!open) return;
+    const timer = window.setTimeout(() => searchRef.current?.focus(), 150);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
     };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const normalizedQuery = query.trim().toLocaleLowerCase("fa");
+  const orderedItems = items
+    .filter((item) => item.label.toLocaleLowerCase("fa").includes(normalizedQuery))
+    .sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0) || a.label.localeCompare(b.label, "fa"));
 
   return (
-    <div ref={wrapRef} className="relative">
+    <div>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setQuery("");
+          setOpen(true);
+        }}
         className="w-full rounded-2xl bg-white px-4 py-3 ring-1 ring-black/10 text-right flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-navy-900/20"
       >
         <span className={`text-sm ${valueId ? "text-ink font-extrabold" : "text-muted"}`}>
@@ -1833,40 +2008,41 @@ function Dropdown({
       </button>
 
       {open && (
-        <div className="absolute z-20 mt-2 w-full rounded-2xl bg-white shadow-xl ring-1 ring-black/10 overflow-hidden">
-          <div className="max-h-56 overflow-auto">
-            {items.map((it) => (
-              <div key={it.id} className="flex items-center justify-between px-3 py-2 hover:bg-bg">
-                <button
-                  className="flex-1 text-right text-sm font-semibold text-ink"
-                  onClick={() => {
-                    onChange(it.id);
-                    setOpen(false);
-                  }}
-                >
-                  {it.label}
-                </button>
-
-                <button
-                  className="ml-1 h-8 w-8 rounded-xl bg-bg text-navy-900 hover:bg-slate-200"
-                  title="ویرایش"
-                  onClick={() => onEdit(it.id)}
-                >
-                  ✎
-                </button>
+        <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label="انتخاب حساب">
+          <button className="absolute inset-0 bg-black/45" onClick={() => setOpen(false)} aria-label="بستن انتخاب حساب" />
+          <div className="absolute inset-x-0 bottom-0 flex max-h-[82dvh] min-h-[68dvh] flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-x-4 sm:bottom-4 sm:mx-auto sm:max-w-[520px] sm:rounded-3xl lg:inset-0 lg:m-auto lg:h-[min(720px,82vh)] lg:min-h-0">
+            <div className="shrink-0 border-b border-slate-100 px-4 pb-3 pt-3">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <div className="text-base font-extrabold text-ink">انتخاب حساب</div>
+                  <div className="mt-0.5 text-[11px] text-muted">حساب‌های استفاده‌شده اخیر بالاتر نمایش داده می‌شوند</div>
+                </div>
+                <button type="button" onClick={() => setOpen(false)} className="grid h-10 w-10 place-items-center rounded-xl bg-bg text-lg text-muted hover:bg-slate-200" aria-label="بستن">×</button>
               </div>
-            ))}
+              <div className="flex items-center gap-2 rounded-2xl bg-bg px-3 ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-navy-900/20">
+                <span className="text-muted" aria-hidden="true">⌕</span>
+                <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} className="h-12 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted" type="search" inputMode="search" placeholder="جست‌وجوی حساب" />
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3">
+              {orderedItems.length ? <div className="space-y-1">
+                {orderedItems.map((item) => {
+                  const selected = item.id === valueId;
+                  return <div key={item.id} className={`flex min-h-14 items-center gap-2 rounded-2xl px-2 ${selected ? "bg-orange-50 ring-1 ring-orangeExpense/20" : "hover:bg-bg"}`}>
+                    <button type="button" className="flex min-w-0 flex-1 items-center gap-3 px-1 py-2 text-right" onClick={() => { onChange(item.id); setOpen(false); }}>
+                      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-lg ${selected ? "bg-white" : "bg-bg"}`}>▣</span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-extrabold text-ink">{item.label}</span>
+                      {selected && <span className="shrink-0 text-sm font-extrabold text-orangeExpense">✓</span>}
+                    </button>
+                    <button type="button" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-navy-900 hover:bg-white" title="ویرایش" aria-label={`ویرایش ${item.label}`} onClick={() => { setOpen(false); onEdit(item.id); }}>✎</button>
+                  </div>;
+                })}
+              </div> : <div className="grid h-full min-h-40 place-items-center px-6 text-center"><div><div className="font-extrabold text-ink">حساب پیدا نشد</div><div className="mt-1 text-xs text-muted">نام دیگری جست‌وجو کن یا حساب تازه بساز.</div></div></div>}
+            </div>
+            <div className="shrink-0 border-t border-slate-100 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:rounded-b-3xl">
+              <button type="button" className="h-12 w-full rounded-2xl bg-navy-900 px-4 text-sm font-extrabold text-white hover:bg-navy-700" onClick={() => { setOpen(false); onAdd(); }}>+ {addLabel}</button>
+            </div>
           </div>
-
-          <button
-            className="w-full border-t px-3 py-3 text-sm font-extrabold text-ink hover:bg-bg"
-            onClick={() => {
-              setOpen(false);
-              onAdd();
-            }}
-          >
-            + {addLabel}
-          </button>
         </div>
       )}
     </div>
