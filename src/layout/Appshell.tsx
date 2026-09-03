@@ -1288,7 +1288,6 @@ function AddTransactionModal({
   const [date, setDate] = useState<string>(initialTx?.date ?? todayISO());
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [note, setNote] = useState<string>(initialTx?.note ?? "");
-  const [notePickerOpen, setNotePickerOpen] = useState(false);
 
   const [categoryId, setCategoryId] = useState<string>(initialTx?.categoryId ?? "");
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
@@ -1517,16 +1516,13 @@ function AddTransactionModal({
                 />
               )}
 
-              <button
-                type="button"
-                onClick={() => setNotePickerOpen(true)}
-                className="flex min-h-12 w-full items-center justify-between rounded-2xl bg-white px-4 py-3 text-right ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-navy-900/20"
-              >
-                <span className={`min-w-0 truncate text-sm ${note ? "font-extrabold text-ink" : "text-muted"}`}>
-                  {note || "بابت / شرح (اختیاری)"}
-                </span>
-                <span className="shrink-0 text-xs font-bold text-navy-900">انتخاب</span>
-              </button>
+              <input
+                type="text"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="بابت / شرح (اختیاری)"
+                className="min-h-12 w-full rounded-2xl bg-white px-4 py-3 text-right text-sm ring-1 ring-black/10 outline-none placeholder:text-muted focus:ring-2 focus:ring-navy-900/20"
+              />
 
               {type !== "transfer" ? (
                 <div className="space-y-2">
@@ -1633,18 +1629,6 @@ function AddTransactionModal({
           }}
           onEdit={openCategoryForm}
           onAdd={() => openCategoryForm()}
-        />
-      )}
-
-      {notePickerOpen && (
-        <NotePicker
-          transactions={txs.filter((transaction) => transaction.type === type)}
-          value={note}
-          onClose={() => setNotePickerOpen(false)}
-          onSelect={(value) => {
-            setNote(value);
-            setNotePickerOpen(false);
-          }}
         />
       )}
 
@@ -1808,121 +1792,6 @@ function CategoryPicker({
           >
             + افزودن دسته‌بندی جدید
           </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function NotePicker({
-  transactions,
-  value,
-  onClose,
-  onSelect,
-}: {
-  transactions: Tx[];
-  value: string;
-  onClose: () => void;
-  onSelect: (value: string) => void;
-}) {
-  const [query, setQuery] = useState(value);
-  const searchRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      searchRef.current?.focus();
-      searchRef.current?.select();
-    }, 150);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  const normalizedQuery = query.trim().toLocaleLowerCase("fa");
-  const lastUsedNotes = new Map<string, { label: string; usedAt: number }>();
-  transactions.forEach((transaction, index) => {
-    const label = transaction.note?.trim();
-    if (!label) return;
-    const key = label.toLocaleLowerCase("fa");
-    const usedAt = new Date(transaction.createdAt ?? `${transaction.date}T00:00:00`).getTime() + index;
-    const existing = lastUsedNotes.get(key);
-    if (!existing || usedAt > existing.usedAt) lastUsedNotes.set(key, { label, usedAt });
-  });
-  const suggestions = [...lastUsedNotes.values()]
-    .filter(({ label }) => label.toLocaleLowerCase("fa").includes(normalizedQuery))
-    .sort((a, b) => b.usedAt - a.usedAt);
-  const exactMatch = suggestions.some(
-    ({ label }) => label.toLocaleLowerCase("fa") === normalizedQuery,
-  );
-
-  return (
-    <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label="انتخاب بابت">
-      <button className="absolute inset-0 bg-black/45" onClick={onClose} aria-label="بستن انتخاب بابت" />
-
-      <div className="absolute inset-x-0 bottom-0 flex max-h-[82dvh] min-h-[68dvh] flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-x-4 sm:bottom-4 sm:mx-auto sm:max-w-[520px] sm:rounded-3xl lg:inset-0 lg:m-auto lg:h-[min(720px,82vh)] lg:min-h-0">
-        <div className="shrink-0 border-b border-slate-100 px-4 pb-3 pt-3">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <div className="text-base font-extrabold text-ink">انتخاب بابت</div>
-              <div className="mt-0.5 text-[11px] text-muted">موارد استفاده‌شده اخیر بالاتر نمایش داده می‌شوند</div>
-            </div>
-            <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-xl bg-bg text-lg text-muted hover:bg-slate-200" aria-label="بستن">
-              ×
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 rounded-2xl bg-bg px-3 ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-navy-900/20">
-            <span className="text-muted" aria-hidden="true">⌕</span>
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && query.trim()) onSelect(query.trim());
-              }}
-              className="h-12 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
-              type="search"
-              inputMode="search"
-              placeholder="جست‌وجو یا نوشتن بابت جدید"
-            />
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3">
-          {query.trim() && !exactMatch && (
-            <button type="button" onClick={() => onSelect(query.trim())} className="mb-2 flex min-h-14 w-full items-center gap-3 rounded-2xl bg-orange-50 px-3 text-right ring-1 ring-orangeExpense/20">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-xl">＋</span>
-              <span className="min-w-0 flex-1 truncate text-sm font-extrabold text-ink">ثبت «{query.trim()}»</span>
-            </button>
-          )}
-          {suggestions.length ? (
-            <div className="space-y-1">
-              {suggestions.map(({ label }) => (
-                <button key={label} type="button" onClick={() => onSelect(label)} className={`flex min-h-14 w-full items-center gap-3 rounded-2xl px-3 text-right transition-colors ${label === value ? "bg-orange-50 ring-1 ring-orangeExpense/20" : "hover:bg-bg"}`}>
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-bg text-lg">≡</span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-extrabold text-ink">{label}</span>
-                  {label === value && <span className="shrink-0 text-sm font-extrabold text-orangeExpense">✓</span>}
-                </button>
-              ))}
-            </div>
-          ) : !query.trim() ? (
-            <div className="grid h-full min-h-40 place-items-center px-6 text-center text-sm text-muted">هنوز بابت قبلی برای این نوع تراکنش وجود ندارد.</div>
-          ) : null}
-        </div>
-
-        <div className="shrink-0 border-t border-slate-100 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:rounded-b-3xl">
-          <div className="flex gap-2">
-            {value && <button type="button" onClick={() => onSelect("")} className="h-12 rounded-2xl bg-bg px-4 text-sm font-extrabold text-ink hover:bg-slate-200">پاک کردن</button>}
-            <button type="button" onClick={() => query.trim() ? onSelect(query.trim()) : onClose()} className="h-12 flex-1 rounded-2xl bg-navy-900 px-4 text-sm font-extrabold text-white hover:bg-navy-700">
-              {query.trim() ? "انتخاب بابت" : "بستن"}
-            </button>
-          </div>
         </div>
       </div>
     </div>

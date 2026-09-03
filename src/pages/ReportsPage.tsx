@@ -25,6 +25,13 @@ type Ctx = {
 };
 
 type RangePreset = "month" | "year" | "last30" | "custom";
+type ExpenseCategoryTotal = {
+  key: string;
+  categoryId?: string;
+  label: string;
+  value: number;
+  count: number;
+};
 
 const money = (n: number) => new Intl.NumberFormat("fa-IR").format(Math.abs(Math.round(n)));
 const percent = (n: number) => new Intl.NumberFormat("fa-IR").format(Math.round(n));
@@ -39,6 +46,7 @@ export default function ReportsPage() {
   const [preset, setPreset] = useState<RangePreset>("month");
   const [from, setFrom] = useState(monthBounds.start);
   const [to, setTo] = useState(monthBounds.end);
+  const [selectedExpenseCategory, setSelectedExpenseCategory] = useState<string | null>(null);
 
   useEffect(() => {
     if (searchParams.get("section") !== "accounts") return;
@@ -95,6 +103,36 @@ export default function ReportsPage() {
       ),
     [filteredTxs, categoryById]
   );
+
+  const expenseCategories = useMemo(() => {
+    const totalsByCategory = new Map<string, ExpenseCategoryTotal>();
+    filteredTxs
+      .filter((tx) => tx.type === "expense")
+      .forEach((tx) => {
+        const key = tx.categoryId ?? "uncategorized";
+        const current = totalsByCategory.get(key);
+        if (current) {
+          current.value += tx.amountToman;
+          current.count += 1;
+          return;
+        }
+        totalsByCategory.set(key, {
+          key,
+          categoryId: tx.categoryId,
+          label: (tx.categoryId ? categoryById.get(tx.categoryId) : undefined) || "بدون دسته‌بندی",
+          value: tx.amountToman,
+          count: 1,
+        });
+      });
+    return [...totalsByCategory.values()].sort((a, b) => b.value - a.value);
+  }, [filteredTxs, categoryById]);
+
+  const activeExpenseCategory = expenseCategories.find((category) => category.key === selectedExpenseCategory);
+  const activeExpenseTransactions = activeExpenseCategory
+    ? filteredTxs.filter(
+        (tx) => tx.type === "expense" && (tx.categoryId ?? "uncategorized") === activeExpenseCategory.key
+      )
+    : [];
 
   const incomeSlices = useMemo(
     () =>
@@ -193,6 +231,70 @@ export default function ReportsPage() {
         <PieChart title="هزینه‌ها" total={totals.expense} slices={expenseSlices} emptyText="هزینه‌ای در این بازه نیست." />
         <PieChart title="درآمدها" total={totals.income} slices={incomeSlices} emptyText="درآمدی در این بازه نیست." />
       </div>
+
+      <section className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-extrabold text-ink">دسته‌بندی هزینه‌ها</div>
+            <div className="mt-1 text-[11px] text-muted">برای دیدن ریز هزینه‌ها روی هر دسته بزن.</div>
+          </div>
+          <div className="shrink-0 text-xs font-extrabold text-expense">{money(totals.expense)} تومان</div>
+        </div>
+
+        {expenseCategories.length === 0 ? (
+          <div className="mt-4 text-xs text-muted">هزینه‌ای در بازه انتخاب‌شده ثبت نشده است.</div>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {expenseCategories.map((category) => {
+              const active = category.key === selectedExpenseCategory;
+              return (
+                <button
+                  key={category.key}
+                  type="button"
+                  onClick={() => setSelectedExpenseCategory((current) => (current === category.key ? null : category.key))}
+                  className={`flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 text-right transition ${
+                    active ? "bg-orange-50 ring-1 ring-orangeExpense/25" : "bg-bg hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-extrabold text-ink">{category.label}</div>
+                    <div className="mt-1 text-[10px] text-muted">{new Intl.NumberFormat("fa-IR").format(category.count)} تراکنش</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-sm font-extrabold text-expense">{money(category.value)} تومان</span>
+                    <span className="text-muted">{active ? "⌃" : "⌄"}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {activeExpenseCategory && (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="text-sm font-extrabold text-ink">ریز هزینه‌های {activeExpenseCategory.label}</div>
+              <div className="text-[11px] text-muted">{new Intl.NumberFormat("fa-IR").format(activeExpenseTransactions.length)} مورد</div>
+            </div>
+            <div className="space-y-2">
+              {activeExpenseTransactions.map((tx) => (
+                <button
+                  key={tx.id}
+                  type="button"
+                  onClick={() => openEdit(tx.id)}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl bg-orange-50/70 px-3 py-2 text-right ring-1 ring-black/5 hover:brightness-[0.98] active:brightness-[0.97]"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-extrabold text-ink">{tx.note || accountTitle(tx.fromAccountId)}</div>
+                    <div className="truncate text-[11px] text-muted">{jalaliISODate(tx.date)} · {accountTitle(tx.fromAccountId)}</div>
+                  </div>
+                  <div className="shrink-0 text-sm font-extrabold text-expense">{money(tx.amountToman)} تومان</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <MonthlyBarChart rows={monthlySeries} />
