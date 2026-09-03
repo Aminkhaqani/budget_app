@@ -183,7 +183,7 @@ export default function ReportsPage() {
         onTransactions={(accountId) => navigate(`/transactions?account=${encodeURIComponent(accountId)}&period=month`)}
       />
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-2">
         <SummaryCard title="درآمد" value={totals.income} tone="text-navy-900" />
         <SummaryCard title="هزینه" value={totals.expense} tone="text-expense" />
         <SummaryCard title="مانده" value={totals.income - totals.expense} tone="text-ink" signed />
@@ -208,7 +208,7 @@ export default function ReportsPage() {
                   key={tx.id}
                   type="button"
                   onClick={() => openEdit(tx.id)}
-                  className={`flex w-full flex-col items-stretch gap-1 rounded-2xl px-3 py-2.5 text-right ring-1 ring-black/5 hover:brightness-[0.98] active:brightness-[0.97] lg:flex-row lg:items-center lg:justify-between lg:gap-3 lg:py-2 ${
+                  className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 text-right ring-1 ring-black/5 hover:brightness-[0.98] active:brightness-[0.97] ${
                     tx.type === "income" ? "bg-emerald-50/70" : tx.type === "expense" ? "bg-orange-50/70" : "bg-bg"
                   }`}
                 >
@@ -218,7 +218,7 @@ export default function ReportsPage() {
                     </div>
                     <div className="truncate text-[11px] text-muted">{jalaliISODate(tx.date)} · {tx.note || fullJalali(tx.date)}</div>
                   </div>
-                  <div className={`shrink-0 self-end text-sm font-extrabold lg:self-auto ${tx.type === "income" ? "text-emerald-700" : tx.type === "expense" ? "text-expense" : "text-transfer"}`}>
+                  <div className={`shrink-0 text-sm font-extrabold ${tx.type === "income" ? "text-emerald-700" : tx.type === "expense" ? "text-expense" : "text-transfer"}`}>
                     {money(tx.amountToman)}
                   </div>
                 </button>

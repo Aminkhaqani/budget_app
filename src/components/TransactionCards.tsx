@@ -116,7 +116,7 @@ function TransactionCard({
     <button
       type="button"
       onClick={() => openEdit(tx.id)}
-      className={`flex w-full flex-col items-stretch gap-2 rounded-2xl px-3.5 py-3 text-right shadow-sm ring-1 ring-black/5 hover:brightness-[0.98] active:brightness-[0.97] lg:flex-row lg:items-center lg:justify-between lg:gap-3 lg:py-2 ${view.rowBg}`}
+      className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-right shadow-sm ring-1 ring-black/5 hover:brightness-[0.98] active:brightness-[0.97] ${view.rowBg}`}
       title="ویرایش تراکنش"
     >
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white text-lg shadow-sm ring-1 ring-black/5">
@@ -132,7 +132,7 @@ function TransactionCard({
         </span>
       </span>
 
-      <span className={`shrink-0 self-end text-sm font-extrabold lg:self-auto ${view.amountTone}`}>
+      <span className={`shrink-0 text-sm font-extrabold ${view.amountTone}`}>
         {money(tx.amountToman)}
         <span className="mr-1 text-[10px] font-bold text-muted">تومن</span>
       </span>
