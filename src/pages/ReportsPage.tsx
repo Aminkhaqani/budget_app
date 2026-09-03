@@ -46,7 +46,6 @@ export default function ReportsPage() {
   const [preset, setPreset] = useState<RangePreset>("month");
   const [from, setFrom] = useState(monthBounds.start);
   const [to, setTo] = useState(monthBounds.end);
-  const [selectedExpenseCategory, setSelectedExpenseCategory] = useState<string | null>(null);
 
   useEffect(() => {
     if (searchParams.get("section") !== "accounts") return;
@@ -126,13 +125,6 @@ export default function ReportsPage() {
       });
     return [...totalsByCategory.values()].sort((a, b) => b.value - a.value);
   }, [filteredTxs, categoryById]);
-
-  const activeExpenseCategory = expenseCategories.find((category) => category.key === selectedExpenseCategory);
-  const activeExpenseTransactions = activeExpenseCategory
-    ? filteredTxs.filter(
-        (tx) => tx.type === "expense" && (tx.categoryId ?? "uncategorized") === activeExpenseCategory.key
-      )
-    : [];
 
   const incomeSlices = useMemo(
     () =>
@@ -245,16 +237,20 @@ export default function ReportsPage() {
           <div className="mt-4 text-xs text-muted">هزینه‌ای در بازه انتخاب‌شده ثبت نشده است.</div>
         ) : (
           <div className="mt-4 space-y-2">
-            {expenseCategories.map((category) => {
-              const active = category.key === selectedExpenseCategory;
-              return (
+            {expenseCategories.map((category) => (
                 <button
                   key={category.key}
                   type="button"
-                  onClick={() => setSelectedExpenseCategory((current) => (current === category.key ? null : category.key))}
-                  className={`flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 text-right transition ${
-                    active ? "bg-orange-50 ring-1 ring-orangeExpense/25" : "bg-bg hover:bg-slate-100"
-                  }`}
+                  onClick={() => {
+                    const params = new URLSearchParams({
+                      type: "expense",
+                      category: category.categoryId ?? "none",
+                      from,
+                      to,
+                    });
+                    navigate(`/transactions?${params.toString()}`);
+                  }}
+                  className="flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl bg-bg px-3 py-2 text-right transition hover:bg-slate-100"
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-extrabold text-ink">{category.label}</div>
@@ -262,36 +258,10 @@ export default function ReportsPage() {
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <span className="text-sm font-extrabold text-expense">{money(category.value)} تومان</span>
-                    <span className="text-muted">{active ? "⌃" : "⌄"}</span>
+                    <span className="text-muted">‹</span>
                   </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {activeExpenseCategory && (
-          <div className="mt-4 border-t border-slate-100 pt-4">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <div className="text-sm font-extrabold text-ink">ریز هزینه‌های {activeExpenseCategory.label}</div>
-              <div className="text-[11px] text-muted">{new Intl.NumberFormat("fa-IR").format(activeExpenseTransactions.length)} مورد</div>
-            </div>
-            <div className="space-y-2">
-              {activeExpenseTransactions.map((tx) => (
-                <button
-                  key={tx.id}
-                  type="button"
-                  onClick={() => openEdit(tx.id)}
-                  className="flex w-full items-center justify-between gap-3 rounded-2xl bg-orange-50/70 px-3 py-2 text-right ring-1 ring-black/5 hover:brightness-[0.98] active:brightness-[0.97]"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-extrabold text-ink">{tx.note || accountTitle(tx.fromAccountId)}</div>
-                    <div className="truncate text-[11px] text-muted">{jalaliISODate(tx.date)} · {accountTitle(tx.fromAccountId)}</div>
-                  </div>
-                  <div className="shrink-0 text-sm font-extrabold text-expense">{money(tx.amountToman)} تومان</div>
                 </button>
               ))}
-            </div>
           </div>
         )}
       </section>

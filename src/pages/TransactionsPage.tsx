@@ -44,10 +44,15 @@ export default function TransactionsPage() {
   );
   const [query, setQuery] = useState("");
   const accountId = searchParams.get("account") || "";
+  const categoryId = searchParams.get("category") || "";
+  const fromDate = searchParams.get("from") || "";
+  const toDate = searchParams.get("to") || "";
+  const dateRange = useMemo(() => (fromDate && toDate ? { start: fromDate, end: toDate } : null), [fromDate, toDate]);
 
   const categoryById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
   const account = accountId ? accountById.get(accountId) : undefined;
+  const category = categoryId && categoryId !== "none" ? categoryById.get(categoryId) : undefined;
   const periodBounds = useMemo(() => {
     if (period === "month") return currentJalaliMonthBounds();
     if (period === "year") return currentJalaliYearBounds();
@@ -73,6 +78,8 @@ export default function TransactionsPage() {
     const params = new URLSearchParams(searchParams);
     if (next === "all") params.delete("period");
     else params.set("period", next);
+    params.delete("from");
+    params.delete("to");
     setSearchParams(params, { replace: true });
   };
 
@@ -82,12 +89,28 @@ export default function TransactionsPage() {
     setSearchParams(params, { replace: true });
   };
 
+  const clearCategory = () => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("category");
+    setSearchParams(params, { replace: true });
+  };
+
+  const clearDateRange = () => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("from");
+    params.delete("to");
+    setSearchParams(params, { replace: true });
+  };
+
   const list = useMemo(() => {
     const normalizedQuery = normalizeSearch(query);
     return txs.filter((tx) => {
       if (filter !== "all" && tx.type !== filter) return false;
-      if (periodBounds && !isBetweenISO(tx.date, periodBounds.start, periodBounds.end)) return false;
+      if (dateRange && !isBetweenISO(tx.date, dateRange.start, dateRange.end)) return false;
+      if (!dateRange && periodBounds && !isBetweenISO(tx.date, periodBounds.start, periodBounds.end)) return false;
       if (accountId && tx.fromAccountId !== accountId && tx.toAccountId !== accountId) return false;
+      if (categoryId === "none" && tx.categoryId) return false;
+      if (categoryId && categoryId !== "none" && tx.categoryId !== categoryId) return false;
       if (!normalizedQuery) return true;
 
       const category = tx.categoryId ? categoryById.get(tx.categoryId) : undefined;
@@ -112,7 +135,7 @@ export default function TransactionsPage() {
       );
       return haystack.includes(normalizedQuery);
     });
-  }, [accountById, accountId, categoryById, filter, periodBounds, query, txs]);
+  }, [accountById, accountId, categoryById, categoryId, dateRange, filter, periodBounds, query, txs]);
 
   return (
     <div className="space-y-4 pb-4">
@@ -142,6 +165,30 @@ export default function TransactionsPage() {
               <div className="truncate text-xs font-extrabold">{account.title}</div>
             </div>
             <button type="button" onClick={clearAccount} className="rounded-xl bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white">
+              حذف فیلتر
+            </button>
+          </div>
+        )}
+
+        {categoryId && (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-orange-50 px-3 py-2 text-expense ring-1 ring-orangeExpense/20">
+            <div className="min-w-0">
+              <div className="text-[10px] text-expense/70">دسته‌بندی هزینه</div>
+              <div className="truncate text-xs font-extrabold">{categoryId === "none" ? "بدون دسته‌بندی" : category?.title || "دسته‌بندی انتخاب‌شده"}</div>
+            </div>
+            <button type="button" onClick={clearCategory} className="rounded-xl bg-white px-3 py-1.5 text-[11px] font-bold text-expense ring-1 ring-orangeExpense/15">
+              حذف فیلتر
+            </button>
+          </div>
+        )}
+
+        {dateRange && (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-bg px-3 py-2 text-ink ring-1 ring-black/5">
+            <div className="min-w-0">
+              <div className="text-[10px] text-muted">بازهٔ گزارش</div>
+              <div className="truncate text-xs font-extrabold">{jalaliISODate(dateRange.start)} تا {jalaliISODate(dateRange.end)}</div>
+            </div>
+            <button type="button" onClick={clearDateRange} className="rounded-xl bg-white px-3 py-1.5 text-[11px] font-bold text-muted ring-1 ring-black/5">
               حذف فیلتر
             </button>
           </div>
