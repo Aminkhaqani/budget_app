@@ -1521,7 +1521,7 @@ function AddTransactionModal({
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
                 placeholder="بابت / شرح (اختیاری)"
-                className="min-h-12 w-full rounded-2xl bg-white px-4 py-3 text-right text-sm ring-1 ring-black/10 outline-none placeholder:text-muted focus:ring-2 focus:ring-navy-900/20"
+                className="min-h-12 w-full rounded-2xl bg-white px-4 py-3 text-right text-base ring-1 ring-black/10 outline-none placeholder:text-muted focus:ring-2 focus:ring-navy-900/20"
               />
 
               {type !== "transfer" ? (
